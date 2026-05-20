@@ -111,6 +111,137 @@ canvas {
   pointer-events: auto;
 }
 
+#tracking-display {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.82);
+  text-shadow: 0 0 8px rgba(0, 243, 255, 0.35);
+}
+
+.water-meter {
+  position: absolute;
+  right: max(1rem, env(safe-area-inset-right));
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.45rem;
+  pointer-events: none;
+}
+
+.water-meter-track {
+  position: relative;
+  width: 22px;
+  height: min(42vh, 280px);
+  border-radius: 999px;
+  border: 2px solid rgba(255, 255, 255, 0.28);
+  background: rgba(10, 14, 24, 0.72);
+  overflow: hidden;
+  box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.45);
+}
+
+.water-meter-fill {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 0%;
+  background: linear-gradient(180deg, rgba(100, 200, 255, 0.95), rgba(20, 80, 200, 0.95));
+  transition: height 0.25s ease-out;
+  border-radius: 0 0 999px 999px;
+}
+
+.water-meter-danger .water-meter-fill {
+  background: linear-gradient(180deg, rgba(255, 120, 120, 0.95), rgba(200, 40, 40, 0.95));
+}
+
+.water-meter-mark {
+  position: absolute;
+  left: -6px;
+  right: -6px;
+  bottom: 50%;
+  height: 2px;
+  background: rgba(255, 80, 80, 0.85);
+  box-shadow: 0 0 8px rgba(255, 80, 80, 0.6);
+  pointer-events: none;
+}
+
+.water-meter-label {
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: rgba(180, 230, 255, 0.95);
+  text-shadow: 0 0 8px rgba(0, 243, 255, 0.4);
+}
+
+.water-meter-danger .water-meter-label {
+  color: #ff8a80;
+}
+
+.mug-timers {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  min-width: min(220px, 42vw);
+  pointer-events: none;
+}
+
+.mug-timers.is-hidden {
+  display: none;
+}
+
+.mug-timer-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.45rem 0.55rem;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 190, 80, 0.45);
+  background: rgba(20, 14, 8, 0.78);
+  box-shadow: 0 0 12px rgba(255, 170, 60, 0.18);
+}
+
+.mug-timer-row.is-hidden {
+  display: none;
+}
+
+.mug-timer-name {
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: rgba(255, 220, 140, 0.95);
+  text-shadow: 0 0 8px rgba(255, 170, 60, 0.35);
+}
+
+.mug-timer-track {
+  height: 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 210, 120, 0.35);
+  background: rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+
+.mug-timer-fill {
+  height: 100%;
+  width: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(255, 170, 60, 0.95), rgba(255, 220, 120, 0.95));
+  transform-origin: left center;
+  transition: width 0.12s linear;
+}
+
+.menu-hero-roof-leak {
+  position: relative;
+  margin: 0 auto 1.35rem;
+  padding: 1.5rem 1rem;
+  border-radius: 18px;
+  border: 1px solid rgba(100, 180, 255, 0.4);
+  background: radial-gradient(ellipse at 50% 20%, rgba(80, 160, 255, 0.2), transparent 55%),
+    linear-gradient(165deg, rgba(12, 18, 32, 0.95), rgba(8, 10, 18, 0.92));
+  box-shadow: 0 0 28px rgba(80, 160, 255, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+
 #level-display {
   font-size: 1.1rem;
   font-weight: 700;
@@ -148,11 +279,15 @@ canvas {
   box-shadow: 0 0 14px rgba(0, 0, 0, 0.45);
 }
 
-/** Floating «На весь экран» в верхнем правом углу меню */
-.btn-fullscreen {
-  position: absolute;
+/** Floating «На весь экран» — всегда поверх меню и игры */
+#ui-layer > .btn-fullscreen {
+  position: fixed;
   top: max(0.75rem, env(safe-area-inset-top));
   right: max(0.75rem, env(safe-area-inset-right));
+  z-index: 20;
+}
+
+.btn-fullscreen {
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;

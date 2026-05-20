@@ -6,11 +6,11 @@
     <meta name="theme-color" content="#0a0a14" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-title" content="Blasters" />
+    <meta name="apple-mobile-web-app-title" content="Протечка" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/blaster-icon.svg" />
-    <title>Blasters · Co-op</title>
+    <title>Протечка крыши</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="preconnect" href="https://storage.googleapis.com" crossorigin />
@@ -25,43 +25,60 @@
       <video id="webcam" autoplay playsinline muted></video>
       <canvas id="game-canvas"></canvas>
       <div id="ui-layer">
+        <button type="button" id="btn-fullscreen" class="btn-fullscreen" aria-label="На весь экран">
+          <span class="btn-fullscreen-on" aria-hidden="true">⛶</span>
+          <span class="btn-fullscreen-off" aria-hidden="true">⛶</span>
+          <span class="btn-fullscreen-label">На весь экран</span>
+        </button>
         <div id="hud-game" class="hud-game is-hidden">
           <div id="game-over-overlay" class="game-over-overlay is-hidden" aria-live="assertive">GAME OVER</div>
-          <h1 id="score-display">Score: 0</h1>
+          <h1 id="score-display">Поймано: 0</h1>
           <div class="hud-row">
-            <span id="players-display"></span>
+            <span id="tracking-display">Покажите обе руки в кадре</span>
+          </div>
+          <div id="mug-timers" class="mug-timers is-hidden" aria-live="polite">
+            <div id="mug-timer-p0" class="mug-timer-row is-hidden">
+              <span class="mug-timer-name">Игрок 1 · кружка</span>
+              <div class="mug-timer-track"><div class="mug-timer-fill"></div></div>
+            </div>
+            <div id="mug-timer-p1" class="mug-timer-row is-hidden">
+              <span class="mug-timer-name">Игрок 2 · кружка</span>
+              <div class="mug-timer-track"><div class="mug-timer-fill"></div></div>
+            </div>
+          </div>
+          <div id="water-meter" class="water-meter" aria-label="Уровень воды на полу">
+            <div class="water-meter-track">
+              <div id="water-meter-fill" class="water-meter-fill"></div>
+              <div class="water-meter-mark" aria-hidden="true"></div>
+            </div>
+            <span id="water-meter-label" class="water-meter-label">0%</span>
           </div>
           <button type="button" id="btn-back-menu" class="btn-menu btn-back-menu">Меню</button>
         </div>
         <div id="main-menu" class="menu-overlay is-hidden">
-          <button type="button" id="btn-fullscreen" class="btn-fullscreen" aria-label="На весь экран" hidden>
-            <span class="btn-fullscreen-on" aria-hidden="true">⛶</span>
-            <span class="btn-fullscreen-off" aria-hidden="true">⛶</span>
-            <span class="btn-fullscreen-label">На весь экран</span>
-          </button>
           <div class="menu-panel">
-            <div class="menu-hero menu-hero-blasters" aria-hidden="true">
+            <div class="menu-hero menu-hero-roof-leak" aria-hidden="true">
               <div class="menu-hero-glow"></div>
-              <div class="menu-hero-title">BLASTERS</div>
-              <div class="menu-hero-sub">pose tracking · 1–2 игрока · руки = оружие</div>
+              <div class="menu-hero-title">ПРОТЕЧКА</div>
+              <div class="menu-hero-sub">трекинг рук · ведро · лови капли</div>
             </div>
-            <h2 class="menu-heading">Стреляйте по целям с камеры</h2>
+            <h2 class="menu-heading">Ловите капли с протекающей крыши</h2>
             <p class="menu-hint">
-              Поднятая ладонь автоматически стреляет в направлении пальцев. Режим «Два» ищет две позы (тяжелее для CPU/GPU); «Один» — одну.
+              Разведите руки перед камерой — между ними появится ведро. Капли падают сверху в случайных местах. Поймайте их в ведро, иначе вода поднимается с пола. Если уровень воды превысит 50% экрана — игра окончена.
             </p>
             <div class="menu-player-row menu-player-row-prominent" role="radiogroup" aria-labelledby="menu-player-label">
               <div id="menu-player-label" class="menu-player-label">Игроков на камере</div>
               <div class="menu-player-segment">
                 <label class="menu-player-pill">
-                  <input type="radio" name="blasters-players" id="opt-players-1" value="1" />
+                  <input type="radio" name="roof-leak-players" id="opt-players-1" value="1" />
                   <span>Один</span>
                 </label>
                 <label class="menu-player-pill">
-                  <input type="radio" name="blasters-players" id="opt-players-2" value="2" checked />
+                  <input type="radio" name="roof-leak-players" id="opt-players-2" value="2" checked />
                   <span>Два</span>
                 </label>
               </div>
-              <p class="menu-player-hint">Переключатель сохраняется. После смены режима модель поз перезапускается автоматически.</p>
+              <p class="menu-player-hint">В режиме «Два» у каждого своё ведро, общий счёт и уровень воды.</p>
             </div>
             <div class="menu-cta">
               <button type="button" id="btn-start" class="btn-start">Играть</button>

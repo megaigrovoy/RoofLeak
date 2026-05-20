@@ -2,9 +2,9 @@ import { FilesetResolver, PoseLandmarker } from '@mediapipe/tasks-vision';
 
 const MEDIAPIPE_TASKS_VISION_WASM_VER = '0.10.34';
 
-const STORAGE_SFX_OFF = 'blasters-sfx-off';
-const STORAGE_MUSIC_OFF = 'blasters-music-off';
-const STORAGE_PLAYER_COUNT = 'blasters-player-count';
+const STORAGE_SFX_OFF = 'roof-leak-sfx-off';
+const STORAGE_MUSIC_OFF = 'roof-leak-music-off';
+const STORAGE_PLAYER_COUNT = 'roof-leak-player-count';
 
 const DEBUG_FRAME_PERF =
     typeof location !== 'undefined' && new URLSearchParams(location.search).get('perf') === '1';
@@ -20,6 +20,58 @@ function loadPlayerCountPreference() {
 /** 1 или 2 — совпадает с numPoses у PoseLandmarker */
 let playerModeCount = loadPlayerCountPreference();
 
+const PLAYER_COLORS = ['#00f3ff', '#ff00ea'];
+
+const BUCKET_IMG_URL = new URL('./src/assets/img/bucket.png', import.meta.url).href;
+const CUP_IMG_URL = new URL('./src/assets/img/cup.png', import.meta.url).href;
+const BUCKET_PIVOT_X_FRAC = 0.5;
+/** Точка на ободе ведра в PNG (чуть ниже ручки) */
+const BUCKET_PIVOT_Y_FRAC = 0.16;
+const CUP_PIVOT_X_FRAC = 0.42;
+const CUP_PIVOT_Y_FRAC = 0.14;
+const BUCKET_ANGLE_FUDGE = 0;
+
+const bucketSprite = new Image();
+const cupSprite = new Image();
+let bucketSpriteReady = false;
+let cupSpriteReady = false;
+
+function loadSpriteImage(img, url, label) {
+    return new Promise((resolve) => {
+        img.onload = () => resolve(true);
+        img.onerror = () => {
+            console.warn(`[RoofLeak] не удалось загрузить ${label}`);
+            resolve(false);
+        };
+        img.src = url;
+    });
+}
+
+function preloadBucketSprite() {
+    return loadSpriteImage(bucketSprite, BUCKET_IMG_URL, 'bucket.png').then((ok) => {
+        bucketSpriteReady = ok;
+    });
+}
+
+function preloadCupSprite() {
+    return loadSpriteImage(cupSprite, CUP_IMG_URL, 'cup.png').then((ok) => {
+        cupSpriteReady = ok;
+    });
+}
+
+function preloadSprites() {
+    return Promise.all([preloadBucketSprite(), preloadCupSprite()]);
+}
+
+function getVesselDisplayHeight(width, isMug) {
+    const img = isMug ? cupSprite : bucketSprite;
+    const ready = isMug ? cupSpriteReady : bucketSpriteReady;
+    if (ready && img.naturalWidth > 0) {
+        return width * (img.naturalHeight / img.naturalWidth);
+    }
+    return width * GAME_CFG.bucketHeightMul;
+}
+
 function loadPersistedSettings() {
     soundEffectsEnabled = localStorage.getItem(STORAGE_SFX_OFF) !== '1';
     musicEnabled = localStorage.getItem(STORAGE_MUSIC_OFF) !== '1';
@@ -29,31 +81,8 @@ function loadPersistedSettings() {
     if (musicCb) musicCb.checked = !musicEnabled;
 }
 
-const SFX_SHOOT_URLS = [
-    new URL('./src/assets/sounds/blaster/blaster1.MP3', import.meta.url).href
-];
-
-const SFX_HIT_URLS = [
-    new URL('./src/assets/sounds/Sound Of Meat Slice.mp3', import.meta.url).href,
-    new URL('./src/assets/sounds/Sound Of Meat Slice2.mp3', import.meta.url).href,
-    new URL('./src/assets/sounds/Sound Of Fruit Slice.mp3', import.meta.url).href,
-    new URL('./src/assets/sounds/Sound Of Fruit Slice 3.mp3', import.meta.url).href
-];
-
-let shootSfxRot = 0;
-let hitSfxRot = 0;
-
-function playShootSound() {
-    if (!soundEffectsEnabled) return;
-    const url = SFX_SHOOT_URLS[shootSfxRot++ % SFX_SHOOT_URLS.length];
-    playOneShotSfx(url, 0.52);
-}
-
-function playHitSound() {
-    if (!soundEffectsEnabled) return;
-    const url = SFX_HIT_URLS[hitSfxRot++ % SFX_HIT_URLS.length];
-    playOneShotSfx(url, 0.82);
-}
+const SFX_CATCH_URL = new URL('./src/assets/sounds/drops/Water Drop In Bucket.mp3', import.meta.url).href;
+const SFX_SPLASH_URL = new URL('./src/assets/sounds/drops/Water Drop.mp3', import.meta.url).href;
 
 const MENU_MUSIC_URL = new URL('./src/assets/sounds/menu.mp3', import.meta.url).href;
 const GAME_BG_GLOB = import.meta.glob('./src/assets/sounds/OST/*.mp3', {
@@ -70,8 +99,8 @@ function getOrCreateSfxContext() {
     try {
         const AC = window.AudioContext || window.webkitAudioContext;
         if (!AC) return null;
-        if (!window.__blastersAudioCtx) window.__blastersAudioCtx = new AC();
-        return window.__blastersAudioCtx;
+        if (!window.__roofLeakAudioCtx) window.__roofLeakAudioCtx = new AC();
+        return window.__roofLeakAudioCtx;
     } catch (_) {
         return null;
     }
@@ -112,7 +141,7 @@ function playDecodedSfx(ctx, buffer, volume) {
 
 function playOneShotSfx(url, volume) {
     if (!soundEffectsEnabled || !url) return;
-    const ctx = window.__blastersAudioCtx || getOrCreateSfxContext();
+    const ctx = window.__roofLeakAudioCtx || getOrCreateSfxContext();
     const ready = ctx && sfxAudioBufferByUrl.get(url);
     if (ctx && ready) {
         try {
@@ -152,29 +181,12 @@ function preloadHtmlAudioUrl(url) {
     void a.load();
 }
 
-function scheduleStaggeredOstPreload() {
-    const tracks = GAME_BG_TRACKS.filter(Boolean);
-    if (!tracks.length) return;
-    let i = 0;
-    const step = () => {
-        if (i >= tracks.length) return;
-        preloadHtmlAudioUrl(tracks[i++]);
-        setTimeout(step, 120);
-    };
-    const kick = () => step();
-    if (typeof requestIdleCallback === 'function') {
-        requestIdleCallback(kick, { timeout: 1800 });
-    } else {
-        setTimeout(kick, 400);
-    }
-}
-
 function warmSfxAudioBuffersYielding() {
     const ctx = getOrCreateSfxContext();
     if (!ctx) return;
-    const sfxOnly = [...new Set([...SFX_SHOOT_URLS, ...SFX_HIT_URLS])].filter(Boolean);
+    const urls = [SFX_CATCH_URL, SFX_SPLASH_URL].filter(Boolean);
     void (async () => {
-        for (const u of sfxOnly) {
+        for (const u of urls) {
             try {
                 await ensureSfxAudioBuffer(ctx, u);
             } catch (_) {}
@@ -185,13 +197,13 @@ function warmSfxAudioBuffersYielding() {
 
 function preloadGameAudio() {
     if (soundEffectsEnabled) {
-        const sfxUrls = [...new Set([...SFX_SHOOT_URLS, ...SFX_HIT_URLS])].filter(Boolean);
-        for (const u of sfxUrls) preloadHtmlAudioUrl(u);
+        for (const u of [SFX_CATCH_URL, SFX_SPLASH_URL]) preloadHtmlAudioUrl(u);
         warmSfxAudioBuffersYielding();
     }
     if (musicEnabled) {
         preloadHtmlAudioUrl(MENU_MUSIC_URL);
-        scheduleStaggeredOstPreload();
+        const tracks = GAME_BG_TRACKS.filter(Boolean);
+        tracks.forEach((u, i) => setTimeout(() => preloadHtmlAudioUrl(u), i * 120));
     }
 }
 
@@ -213,32 +225,21 @@ function tryUnlockAudioOnUserGesture() {
     if (htmlAudioUnlocked || audioUnlockBusy) return;
     audioUnlockBusy = true;
     resumeSharedAudioContext();
-    const srcs = [SFX_SHOOT_URLS[0], SFX_HIT_URLS[0], MENU_MUSIC_URL];
-    const playSrcAt = (i) => {
-        if (i >= srcs.length) return Promise.reject(new Error('no unlock src'));
-        const a = new Audio();
-        a.preload = 'auto';
-        a.src = srcs[i];
-        a.volume = 0.04;
-        try {
-            a.load();
-        } catch (_) {}
-        return a
-            .play()
-            .then(() => {
-                try {
-                    a.pause();
-                    a.src = '';
-                } catch (_) {}
-            })
-            .catch(() => playSrcAt(i + 1));
-    };
+    const a = new Audio();
+    a.preload = 'auto';
+    a.src = MENU_MUSIC_URL;
+    a.volume = 0.04;
     const busyTimer = setTimeout(() => {
         audioUnlockBusy = false;
     }, 3000);
-    void playSrcAt(0)
+    void a
+        .play()
         .then(() => {
             htmlAudioUnlocked = true;
+            try {
+                a.pause();
+                a.src = '';
+            } catch (_) {}
         })
         .catch(() => {})
         .finally(() => {
@@ -321,364 +322,241 @@ function startGameMusicPlaylist() {
     playGameMusicTrackAt(0);
 }
 
+function playCatchSound() {
+    playOneShotSfx(SFX_CATCH_URL, 0.72);
+}
+
+function playSplashSound() {
+    playOneShotSfx(SFX_SPLASH_URL, 0.68);
+}
+
 const video = document.getElementById('webcam');
 const canvasElement = document.getElementById('game-canvas');
 const canvasCtx = canvasElement.getContext('2d');
 const scoreDisplay = document.getElementById('score-display');
+const waterMeterFill = document.getElementById('water-meter-fill');
+const waterMeterLabel = document.getElementById('water-meter-label');
 const gameOverOverlay = document.getElementById('game-over-overlay');
 const loadingElement = document.getElementById('loading');
 const mainMenu = document.getElementById('main-menu');
 const hudGame = document.getElementById('hud-game');
 const btnBackMenu = document.getElementById('btn-back-menu');
 const btnStart = document.getElementById('btn-start');
-const playersDisplay = document.getElementById('players-display');
+const trackingDisplay = document.getElementById('tracking-display');
+const mugTimersPanel = document.getElementById('mug-timers');
+const mugTimerRows = [0, 1].map((pi) => ({
+    row: document.getElementById(`mug-timer-p${pi}`),
+    fill: document.querySelector(`#mug-timer-p${pi} .mug-timer-fill`),
+    name: document.querySelector(`#mug-timer-p${pi} .mug-timer-name`)
+}));
 
 let poseLandmarker;
 let visionTasksResolver = null;
 let mediapipePoseDelegate = 'CPU';
 let lastVideoTime = -1;
+let currentPoseResults = null;
+
 let score = 0;
-let targets = [];
-let projectiles = [];
+let waterLevel = 0;
+let drops = [];
 let particles = [];
+let leakSpots = [];
 let isPlaying = false;
+let lastFrameTime = performance.now();
+let lastSpawnTime = 0;
+let nextSpawnDelay = 900;
+let lastRedSpawnTime = 0;
+let nextRedSpawnDelay = 9000;
+let gameTime = 0;
+/** poseKey → timestamp ms, до которого вместо ведра — кружка */
+const mugModeUntilByPoseKey = new Map();
 
 const GAME_CFG = {
-    maxTargets: 160,
-    spawnIntervalMs: 3000,
-    projectileSpeed: 28,
-    fireCooldownMs: 260,
-    /** Минимальный модуль «вверх» по нормированному вектору запястье→указательный (0…1). Стрельба только если dy ≤ −этого. */
-    aimUpMinAbsDy: 0.18,
-    aimMinSpanPx: 14,
-    scoreTarget: 10
+    /** Доля высоты экрана — проигрыш при достижении */
+    waterGameOverFrac: 0.5,
+    /** Насколько поднимается вода за пропущенную каплю (доля экрана) */
+    waterRisePerMiss: 0.01,
+    /** Минимальный интервал между стартом роста капли, мс */
+    spawnIntervalMinMs: 1100,
+    spawnIntervalMaxMs: 2600,
+    /** Сколько мс капля «нарастает» на потолке перед падением */
+    dropGrowDurationMs: 1800,
+    dropSpeedMul: 0.0055,
+    dropRadiusMul: 0.026,
+    maxDrops: 48,
+    /** Сколько капель одновременно может «нарастать» на потолке */
+    maxGrowingDrops: 2,
+    leakSpotYMul: 0.038,
+    leakSpotXPadMul: 0.08,
+    redDropSpawnMinMs: 7000,
+    redDropSpawnMaxMs: 13000,
+    mugModeDurationMs: 5000,
+    /** Кружка = 2/3 размера ведра (удвоено от прежних 1/3) */
+    mugSizeMul: 2 / 3,
+    maxGrowingRedDrops: 1,
+    wristMinVisibility: 0.45,
+    /** Ширина ведра как доля расстояния между плечами */
+    bucketShoulderMul: 1.1,
+    bucketHeightMul: 0.82,
+    shoulderMinPx: 40
 };
 
-/** Формация: ступени «N шагов вправо, M влево, один вниз» с паузой между шагами (аркадный ритм). */
-const INVADER_FORMATION = {
-    /** Горизонтальная ступень (доля minSide за один шаг). */
-    stepHMul: 0.0095,
-    /** Вертикальная ступень вниз (доля minSide). */
-    stepVMul: 0.006,
-    /** Интервал между ступеньками, мс — больше значение, медленнее рой. */
-    stepIntervalMs: 580,
-    stepsRight: 2,
-    stepsLeft: 2
-};
+const WRIST_SMOOTH_ALPHA = 0.24;
+const WRIST_TELEPORT_PX = 38;
+const SHOULDER_SMOOTH_ALPHA = 0.12;
+const BUCKET_DISPLAY_SMOOTH_ALPHA = 0.2;
+/** poseKey → { left, right } */
+const wristSmoothByPoseKey = new Map();
+/** poseKey → smoothed shoulder width px */
+const shoulderWidthByPoseKey = new Map();
+/** poseKey → сглаженная позиция ведра на экране */
+const bucketDisplayByPoseKey = new Map();
+/** poseKey → bucket */
+const bucketByPoseKey = new Map();
+let stablePoseShoulderMid = [];
 
-let invaderFormationKinematics = {
-    xOff: 0,
-    yOff: 0,
-    marchFlip: 0,
-    stairPhase: 0,
-    nextStairAtMs: 0
-};
-
-let invaderNextDiveAtMs = 0;
-
-function resetInvaderFormation() {
-    invaderFormationKinematics.xOff = 0;
-    invaderFormationKinematics.yOff = 0;
-    invaderFormationKinematics.marchFlip = 0;
-    invaderFormationKinematics.stairPhase = 0;
-    invaderFormationKinematics.nextStairAtMs = 0;
-    invaderNextDiveAtMs = 0;
+function resetWristSmoothing() {
+    wristSmoothByPoseKey.clear();
+    bucketByPoseKey.clear();
+    shoulderWidthByPoseKey.clear();
+    bucketDisplayByPoseKey.clear();
+    mugModeUntilByPoseKey.clear();
+    stablePoseShoulderMid = [];
 }
 
-/** Сброс только смещения роя (новая волна), таймер нырка задаётся отдельно */
-function resetInvaderFormationPosition() {
-    invaderFormationKinematics.xOff = 0;
-    invaderFormationKinematics.yOff = 0;
-    invaderFormationKinematics.marchFlip = 0;
-    invaderFormationKinematics.stairPhase = 0;
-    invaderFormationKinematics.nextStairAtMs = 0;
+function isMugMode(poseKey, nowMs) {
+    const until = mugModeUntilByPoseKey.get(poseKey);
+    if (until == null) return false;
+    if (nowMs >= until) {
+        mugModeUntilByPoseKey.delete(poseKey);
+        return false;
+    }
+    return true;
 }
 
-function updateInvaderFormation() {
-    const { minSide } = gameLayout;
-    const aliveForm = targets.filter((t) => !t.destroyed && !t.isDiving);
-    if (!aliveForm.length) return;
-
-    const now = performance.now();
-    if (!invaderFormationKinematics.nextStairAtMs) {
-        invaderFormationKinematics.nextStairAtMs = now + INVADER_FORMATION.stepIntervalMs;
-    }
-    if (now < invaderFormationKinematics.nextStairAtMs) return;
-
-    const dH = minSide * INVADER_FORMATION.stepHMul;
-    const dV = minSide * INVADER_FORMATION.stepVMul;
-    const sr = INVADER_FORMATION.stepsRight;
-    const sl = INVADER_FORMATION.stepsLeft;
-    const cycle = sr + sl + 1;
-    const p = invaderFormationKinematics.stairPhase;
-
-    if (p < sr) {
-        invaderFormationKinematics.xOff += dH;
-    } else if (p < sr + sl) {
-        invaderFormationKinematics.xOff -= dH;
-    } else {
-        invaderFormationKinematics.yOff += dV;
-        invaderFormationKinematics.marchFlip ^= 1;
-    }
-
-    invaderFormationKinematics.stairPhase = (p + 1) % cycle;
-    invaderFormationKinematics.nextStairAtMs = now + INVADER_FORMATION.stepIntervalMs;
+function applyMugMode(poseKey, nowMs) {
+    mugModeUntilByPoseKey.set(poseKey, nowMs + GAME_CFG.mugModeDurationMs);
 }
 
-function tryInvaderDive(nowMs) {
-    if (nowMs < invaderNextDiveAtMs) return;
-    const formAlive = targets.filter((t) => !t.destroyed && !t.isDiving);
-    if (formAlive.length < 1) {
-        invaderNextDiveAtMs = nowMs + 900;
-        return;
+function smoothShoulderWidth(poseKey, rawW) {
+    const prev = shoulderWidthByPoseKey.get(poseKey);
+    if (prev == null) {
+        shoulderWidthByPoseKey.set(poseKey, rawW);
+        return rawW;
     }
-    const { w, minSide } = gameLayout;
-    const yoffs = formAlive.map((t) => t.baseY + invaderFormationKinematics.yOff);
-    const maxY = Math.max(...yoffs);
-    const rowBand = minSide * 0.055;
-    const bottom = formAlive.filter((t) => t.baseY + invaderFormationKinematics.yOff >= maxY - rowBand);
-    const pool = bottom.length ? bottom : formAlive;
-    const pick = pool[(Math.random() * pool.length) | 0];
-
-    const wx = pick.baseX + invaderFormationKinematics.xOff;
-    const wy = pick.baseY + invaderFormationKinematics.yOff;
-    pick.isDiving = true;
-    pick.x = wx;
-    pick.y = wy;
-    const cx = w * (0.42 + Math.random() * 0.16);
-    pick.diveVx = (cx - wx) * 0.00125;
-    pick.diveVy = minSide * 0.00315;
-    pick.diveAy = minSide * 0.000045;
-    invaderNextDiveAtMs = nowMs + 2000 + Math.random() * 2200;
+    const a = SHOULDER_SMOOTH_ALPHA;
+    const next = prev * (1 - a) + rawW * a;
+    shoulderWidthByPoseKey.set(poseKey, next);
+    return next;
 }
 
-/** 5 рядов: сверху тяжёлая броня и очки, снизу лёгкие; свой цвет и силуэт на ряд. */
-const INVADER_ROW_DEFINITIONS = [
-    { kind: 'tank', armorMax: 5, score: 62, color: '#ff1744', sizeMul: 0.059 },
-    { kind: 'squid', armorMax: 4, score: 48, color: '#d500f9', sizeMul: 0.055 },
-    { kind: 'squid', armorMax: 3, score: 38, color: '#00e5ff', sizeMul: 0.052 },
-    { kind: 'crab', armorMax: 2, score: 26, color: '#ffea00', sizeMul: 0.05 },
-    { kind: 'bug', armorMax: 1, score: 14, color: '#69f0ae', sizeMul: 0.044 }
-];
-
-const INVADER_COLS_MIN = 9;
-const INVADER_COLS_CAP = 32;
-/** Шаг между центрами в долях minSide (меньше — больше колонок на ту же ширину). */
-const INVADER_COL_PITCH_MUL = 0.051;
-const INVADER_ROW_GAP_MUL = 0.074;
-/** Боковой зазор сетки от края кадра; меньше — ряд почти на всю ширину. */
-const INVADER_GRID_PAD_MUL = 0.016;
-/** Сколько нижних рядов видно в кадре в начале волны (остальные выше края экрана). */
-const INVADER_START_VISIBLE_ROWS = 2;
-
-const INVADER_DEFS = {
-    bug: {
-        armorMax: 1,
-        color: '#7fff00',
-        score: 10,
-        sizeMul: 0.044,
-        init() {}
-    },
-    crab: {
-        armorMax: 2,
-        color: '#ff4b9f',
-        score: 22,
-        sizeMul: 0.05,
-        init() {}
-    },
-    squid: {
-        armorMax: 3,
-        color: '#18ffff',
-        score: 34,
-        sizeMul: 0.053,
-        init() {}
-    },
-    tank: {
-        armorMax: 4,
-        color: '#ffc107',
-        score: 48,
-        sizeMul: 0.058,
-        init() {}
+function smoothWristPoint(prev, raw) {
+    const teleportPx = Math.max(WRIST_TELEPORT_PX, gameLayout.minSide * 0.045);
+    if (!prev || Math.hypot(raw.x - prev.x, raw.y - prev.y) > teleportPx) {
+        return { x: raw.x, y: raw.y, visibility: raw.visibility };
     }
-};
-
-function invaderPaintPixels(ctx, color, s, kind, march) {
-    const u = s / 13;
-    const px = (gx, gy, gw, gh) => {
-        ctx.fillRect(gx * u, gy * u, gw * u, gh * u);
+    const a = WRIST_SMOOTH_ALPHA;
+    return {
+        x: prev.x * (1 - a) + raw.x * a,
+        y: prev.y * (1 - a) + raw.y * a,
+        visibility: raw.visibility
     };
-    ctx.fillStyle = color;
-
-    if (kind === 'bug') {
-        px(-2, -5, 4, 2);
-        px(-4, -3, 8, 2);
-        px(-5, -1, 10, 3);
-        px(-6, 2, 12, 2);
-        px(-3, 4, 6, 2);
-        if (march > 0.5) px(-5, 1, 2, 2);
-        else px(3, 1, 2, 2);
-    } else if (kind === 'crab') {
-        px(-6, 0, 3, 2);
-        px(3, 0, 3, 2);
-        px(-5, -3, 10, 2);
-        px(-4, -1, 8, 2);
-        px(-5, 1, 10, 3);
-        px(-3, 4, 6, 2);
-        px(-7, -1, 2, 3);
-        px(5, -1, 2, 3);
-    } else if (kind === 'squid') {
-        px(-2, -6, 4, 3);
-        px(-4, -3, 8, 2);
-        px(-5, -1, 10, 2);
-        px(-4, 1, 8, 2);
-        px(-6, 3, 3, 2);
-        px(3, 3, 3, 2);
-        const leg = march > 0.5;
-        if (leg) {
-            px(-7, 1, 2, 3);
-            px(5, 1, 2, 3);
-        } else {
-            px(-7, 2, 2, 2);
-            px(5, 2, 2, 2);
-        }
-    } else {
-        px(-5, -4, 10, 3);
-        px(-4, -1, 8, 3);
-        px(-5, 2, 10, 2);
-        px(-3, 4, 6, 2);
-        px(-7, 0, 2, 4);
-        px(5, 0, 2, 4);
-    }
 }
 
-class Invader {
-    /** overrides: { armorMax?, color?, score?, sizeMul? } — ряд формации поверх базового вида kind */
-    constructor(kind, overrides = null) {
-        const def = INVADER_DEFS[kind];
-        if (!def) {
-            throw new Error(`invader kind: ${kind}`);
-        }
-        const layout = gameLayout;
-        const ov = overrides && typeof overrides === 'object' ? overrides : null;
-        this.kind = kind;
-        this.armorMax = ov?.armorMax ?? def.armorMax;
-        this.armor = this.armorMax;
-        this.color = ov?.color ?? def.color;
-        this.scoreValue = ov?.score ?? def.score;
-        const sizeMul = ov?.sizeMul ?? def.sizeMul;
-        this.s = Math.min(80, Math.max(30, layout.minSide * sizeMul));
-        this.hitR = this.s * 0.48;
-        this.baseX = 0;
-        this.baseY = 0;
-        this.x = 0;
-        this.y = 0;
-        this.isDiving = false;
-        this.diveVx = 0;
-        this.diveVy = 0;
-        this.diveAy = 0;
-        this.destroyed = false;
-        this.hitFlash = 0;
-        this.marchT = Math.random() * 4;
-        def.init(this, layout);
-    }
-
-    update(dt = 1) {
-        if (this.destroyed) return;
-        this.marchT += dt * 0.12;
-        if (this.isDiving) {
-            this.x += this.diveVx * dt;
-            this.y += this.diveVy * dt;
-            this.diveVy += this.diveAy * dt;
-            this.diveVx += (this.kind === 'squid' ? 0.15 : 0.08) * Math.sin(this.marchT * 0.7) * dt;
-        } else {
-            this.x = this.baseX + invaderFormationKinematics.xOff;
-            this.y = this.baseY + invaderFormationKinematics.yOff;
-        }
-
-        if (this.hitFlash > 0) this.hitFlash -= 0.16 * dt;
-    }
-
-    draw(ctx) {
-        if (this.destroyed) return;
-        ctx.save();
-        ctx.translate(this.x, this.y);
-        const flash = this.hitFlash > 0;
-        if (flash) {
-            ctx.shadowColor = '#ffffff';
-            ctx.shadowBlur = 22;
-        } else {
-            ctx.shadowColor = this.color;
-            ctx.shadowBlur = 10;
-        }
-        const march = this.isDiving
-            ? (Math.sin(this.marchT) + 1) * 0.5
-            : invaderFormationKinematics.marchFlip;
-        invaderPaintPixels(ctx, this.color, this.s, this.kind, march);
-        ctx.restore();
-    }
+function lerpAngle(from, to, a) {
+    let d = to - from;
+    while (d > Math.PI) d -= Math.PI * 2;
+    while (d < -Math.PI) d += Math.PI * 2;
+    return from + d * a;
 }
 
-function spawnInvaderWave() {
-    const alive = targets.filter((t) => !t.destroyed).length;
-    /** Как в оригинале: следующая волна только после уничтожения текущей (иначе те же baseX/baseY — полное наслоение). */
-    if (alive > 0) return;
+function smoothBucketDisplay(poseKey, raw) {
+    const a = BUCKET_DISPLAY_SMOOTH_ALPHA;
+    let st = bucketDisplayByPoseKey.get(poseKey);
+    if (!st) {
+        st = { cx: raw.cx, topY: raw.topY, angle: raw.angle };
+        bucketDisplayByPoseKey.set(poseKey, st);
+        return raw;
+    }
 
+    st.cx = st.cx * (1 - a) + raw.cx * a;
+    st.topY = st.topY * (1 - a) + raw.topY * a;
+    st.angle = lerpAngle(st.angle, raw.angle, a);
+
+    const catchBottomY = st.topY + raw.height * 0.38;
+    return {
+        ...raw,
+        cx: st.cx,
+        topY: st.topY,
+        angle: st.angle,
+        bottomY: st.topY + raw.height,
+        catchBottomY
+    };
+}
+
+function initLeakSpots() {
+    leakSpots = [];
+}
+
+function randomLeakSpotPosition() {
     const { w, minSide } = gameLayout;
-    const nRows = INVADER_ROW_DEFINITIONS.length;
-    const padX = minSide * INVADER_GRID_PAD_MUL;
-    const interiorW = Math.max(minSide * 0.2, w - 2 * padX);
-    const pitch = minSide * INVADER_COL_PITCH_MUL;
-    let cols = Math.floor(interiorW / pitch);
-    cols = Math.min(INVADER_COLS_CAP, Math.max(INVADER_COLS_MIN, cols));
-    if (nRows * cols > GAME_CFG.maxTargets) {
-        cols = Math.max(INVADER_COLS_MIN, Math.floor(GAME_CFG.maxTargets / nRows));
-    }
-
-    resetInvaderFormationPosition();
-    invaderNextDiveAtMs = performance.now() + 2800 + Math.random() * 1800;
-
-    const spread = cols <= 1 ? 0 : (cols - 1) * pitch;
-    const xRow = padX + (interiorW - spread) * 0.5;
-    const rowGap = minSide * INVADER_ROW_GAP_MUL;
-    const row0FromTop = minSide * 0.058;
-    const rowsAboveClip = Math.max(0, nRows - INVADER_START_VISIBLE_ROWS);
-    const shiftUp = rowsAboveClip * rowGap;
-
-    for (let r = 0; r < nRows; r++) {
-        const tier = INVADER_ROW_DEFINITIONS[r];
-        const worldY = row0FromTop + r * rowGap - shiftUp;
-        for (let c = 0; c < cols; c++) {
-            const inv = new Invader(tier.kind, tier);
-            inv.baseX = xRow + (cols === 1 ? spread * 0.5 : (c / (cols - 1)) * spread);
-            inv.baseY = worldY - invaderFormationKinematics.yOff;
-            inv.isDiving = false;
-            inv.x = inv.baseX + invaderFormationKinematics.xOff;
-            inv.y = inv.baseY + invaderFormationKinematics.yOff;
-            targets.push(inv);
-        }
-    }
+    const pad = minSide * GAME_CFG.leakSpotXPadMul;
+    const yJitter = (Math.random() - 0.5) * minSide * 0.024;
+    return {
+        x: pad + Math.random() * (w - pad * 2),
+        y: minSide * GAME_CFG.leakSpotYMul + yJitter
+    };
 }
 
-let lastSpawnTime = Date.now();
-let lastFrameTime = performance.now();
+function getMugTimeLeft(poseKey, nowMs) {
+    const until = mugModeUntilByPoseKey.get(poseKey);
+    if (!until || nowMs >= until) return null;
+    return until - nowMs;
+}
 
-const lastFireByHandKey = new Map();
+function updateMugTimerHud(activeBuckets, nowMs) {
+    if (!mugTimersPanel) return;
+    let any = false;
+
+    for (let pi = 0; pi < mugTimerRows.length; pi++) {
+        const ui = mugTimerRows[pi];
+        const bucket = activeBuckets.find((b) => playerIndexFromPoseKey(b.poseKey) === pi);
+        const left = bucket?.isMug ? getMugTimeLeft(bucket.poseKey, nowMs) : null;
+
+        if (left != null && ui.row) {
+            any = true;
+            ui.row.classList.remove('is-hidden');
+            const frac = left / GAME_CFG.mugModeDurationMs;
+            if (ui.fill) ui.fill.style.width = `${Math.max(0, frac * 100)}%`;
+            if (ui.name) {
+                ui.name.textContent = playerModeCount === 1 ? 'Кружка' : `Игрок ${pi + 1} · кружка`;
+            }
+        } else if (ui.row) {
+            ui.row.classList.add('is-hidden');
+        }
+    }
+
+    mugTimersPanel.classList.toggle('is-hidden', !any);
+}
+
+function updateHud() {
+    if (scoreDisplay) scoreDisplay.innerText = `Поймано: ${score}`;
+    const pct = Math.min(100, Math.round(waterLevel * 100));
+    if (waterMeterFill) waterMeterFill.style.height = `${pct}%`;
+    if (waterMeterLabel) waterMeterLabel.textContent = `${pct}%`;
+    if (waterMeterFill?.parentElement) {
+        waterMeterFill.parentElement.classList.toggle('water-meter-danger', waterLevel >= GAME_CFG.waterGameOverFrac * 0.75);
+    }
+}
 
 function triggerGameOver() {
     if (!isPlaying) return;
     stopGameMusic();
     isPlaying = false;
-    gameOverOverlay?.classList.remove('is-hidden');
-}
-
-function playerLoadoutFullyDestroyed(poseKey) {
-    const a = getOrCreatePlayerArmor(poseKey);
-    return (
-        a.helmetHits >= HELMET_HITS_TO_BREAK &&
-        a.vestHits >= VEST_HITS_TO_BREAK &&
-        a.gloveLHits >= GLOVE_HITS_TO_BREAK &&
-        a.gloveRHits >= GLOVE_HITS_TO_BREAK
-    );
+    if (gameOverOverlay) {
+        gameOverOverlay.textContent = `GAME OVER · поймано ${score}`;
+        gameOverOverlay.classList.remove('is-hidden');
+    }
 }
 
 function showMainMenu() {
@@ -687,15 +565,11 @@ function showMainMenu() {
     gameOverOverlay?.classList.add('is-hidden');
     mainMenu.classList.remove('is-hidden');
     hudGame.classList.add('is-hidden');
-    targets.length = 0;
-    projectiles.length = 0;
+    drops.length = 0;
     particles.length = 0;
-    lastFireByHandKey.clear();
-    gauntletOverlayByHandKey.clear();
-    gauntletShoulderByPoseKey.clear();
-    playerArmorByPoseKey.clear();
-    stablePoseShoulderMid = [];
-    resetInvaderFormation();
+    leakSpots.length = 0;
+    resetWristSmoothing();
+    updateMugTimerHud([], performance.now());
     canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
     canvasElement.style.visibility = 'hidden';
     void video.pause();
@@ -706,19 +580,18 @@ function startGame() {
     tryUnlockAudioOnUserGesture();
     gameOverOverlay?.classList.add('is-hidden');
     score = 0;
-    scoreDisplay.innerText = `Score: ${score}`;
-    targets.length = 0;
-    projectiles.length = 0;
+    waterLevel = 0;
+    drops.length = 0;
     particles.length = 0;
-    lastSpawnTime = Date.now() - GAME_CFG.spawnIntervalMs;
+    gameTime = 0;
+    lastSpawnTime = performance.now();
+    nextSpawnDelay = randSpawnDelay();
+    lastRedSpawnTime = performance.now();
+    nextRedSpawnDelay = randRedSpawnDelay();
     lastFrameTime = performance.now();
-    lastFireByHandKey.clear();
-    gauntletOverlayByHandKey.clear();
-    gauntletShoulderByPoseKey.clear();
-    playerArmorByPoseKey.clear();
-    stablePoseShoulderMid = [];
-    resetInvaderFormation();
-    invaderNextDiveAtMs = performance.now() + 3400;
+    resetWristSmoothing();
+    initLeakSpots();
+    updateHud();
     mainMenu.classList.add('is-hidden');
     hudGame.classList.remove('is-hidden');
     canvasElement.style.visibility = '';
@@ -737,26 +610,26 @@ const gameContainer = document.getElementById('game-container');
 const btnFullscreen = document.getElementById('btn-fullscreen');
 const btnFullscreenLabel = btnFullscreen?.querySelector('.btn-fullscreen-label');
 
-function isFullscreenSupported() {
-    const el = gameContainer || document.documentElement;
-    return !!(
-        document.fullscreenEnabled ||
-        document.webkitFullscreenEnabled ||
-        el.requestFullscreen ||
-        el.webkitRequestFullscreen
-    );
-}
-
 function getCurrentFullscreenElement() {
     return document.fullscreenElement || document.webkitFullscreenElement || null;
 }
 
 async function enterFullscreen() {
-    const el = gameContainer || document.documentElement;
-    try {
-        if (el.requestFullscreen) await el.requestFullscreen({ navigationUI: 'hide' });
-        else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
-    } catch (_) {}
+    const targets = [gameContainer, document.documentElement, document.body].filter(Boolean);
+    for (const el of targets) {
+        try {
+            if (el.requestFullscreen) {
+                await el.requestFullscreen({ navigationUI: 'hide' });
+                return;
+            }
+            if (el.webkitRequestFullscreen) {
+                el.webkitRequestFullscreen();
+                return;
+            }
+        } catch (e) {
+            console.warn('[RoofLeak] fullscreen failed on', el?.id || el?.tagName, e);
+        }
+    }
 }
 
 async function exitFullscreen() {
@@ -774,8 +647,10 @@ function syncFullscreenButton() {
 }
 
 if (btnFullscreen) {
-    if (isFullscreenSupported()) btnFullscreen.hidden = false;
-    btnFullscreen.addEventListener('click', () => {
+    btnFullscreen.hidden = false;
+    btnFullscreen.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
         if (getCurrentFullscreenElement()) void exitFullscreen();
         else void enterFullscreen();
     });
@@ -790,26 +665,12 @@ mainMenu.addEventListener(
         if (isPlaying) return;
         tryUnlockAudioOnUserGesture();
         if (e.target?.closest?.('#btn-start')) return;
+        if (e.target?.closest?.('#btn-fullscreen')) return;
         if (e.target?.closest?.('.menu-player-row')) return;
         if (e.target?.closest?.('.menu-options')) return;
         playMenuMusic();
     },
     { capture: true }
-);
-
-mainMenu.addEventListener(
-    'touchstart',
-    () => {
-        if (!isPlaying) tryUnlockAudioOnUserGesture();
-    },
-    { capture: true, passive: true }
-);
-mainMenu.addEventListener(
-    'touchend',
-    () => {
-        if (!isPlaying) tryUnlockAudioOnUserGesture();
-    },
-    { capture: true, passive: true }
 );
 
 const optSoundOff = document.getElementById('opt-sound-off');
@@ -835,6 +696,8 @@ if (optMusicOff) {
     });
 }
 
+loadPersistedSettings();
+
 const optPlayers1 = document.getElementById('opt-players-1');
 const optPlayers2 = document.getElementById('opt-players-2');
 
@@ -842,35 +705,6 @@ function syncPlayerCountRadios() {
     if (!optPlayers1 || !optPlayers2) return;
     optPlayers1.checked = playerModeCount === 1;
     optPlayers2.checked = playerModeCount === 2;
-}
-
-async function createPoseLandmarkerInstance() {
-    const vision = visionTasksResolver;
-    if (!vision) {
-        console.warn('[Blasters] createPoseLandmarkerInstance: vision resolver not ready');
-        return;
-    }
-    const np = playerModeCount === 1 ? 1 : 2;
-    const poseOpts = (delegate) => ({
-        baseOptions: {
-            modelAssetPath:
-                'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task',
-            delegate
-        },
-        runningMode: 'VIDEO',
-        numPoses: np
-    });
-
-    try {
-        poseLandmarker = await PoseLandmarker.createFromOptions(vision, poseOpts('GPU'));
-        mediapipePoseDelegate = 'GPU';
-    } catch (e) {
-        console.warn('PoseLandmarker GPU failed, CPU:', e);
-        poseLandmarker = await PoseLandmarker.createFromOptions(vision, poseOpts('CPU'));
-        mediapipePoseDelegate = 'CPU';
-    }
-
-    console.info(`[Blasters] pose delegate: ${mediapipePoseDelegate}, numPoses=${np}`);
 }
 
 async function recreatePoseLandmarker() {
@@ -883,6 +717,7 @@ async function recreatePoseLandmarker() {
     }
     lastVideoTime = -1;
     currentPoseResults = null;
+    resetWristSmoothing();
     await createPoseLandmarkerInstance();
 }
 
@@ -902,10 +737,32 @@ optPlayers2?.addEventListener('change', () => {
     if (optPlayers2.checked) applyPlayerModeFromUi(true);
 });
 
-loadPersistedSettings();
 syncPlayerCountRadios();
 
-const POSE_CONNECTIONS = PoseLandmarker.POSE_CONNECTIONS;
+async function createPoseLandmarkerInstance() {
+    const vision = visionTasksResolver;
+    if (!vision) return;
+    const np = playerModeCount === 1 ? 1 : 2;
+    const poseOpts = (delegate) => ({
+        baseOptions: {
+            modelAssetPath:
+                'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task',
+            delegate
+        },
+        runningMode: 'VIDEO',
+        numPoses: np
+    });
+
+    try {
+        poseLandmarker = await PoseLandmarker.createFromOptions(vision, poseOpts('GPU'));
+        mediapipePoseDelegate = 'GPU';
+    } catch (e) {
+        console.warn('PoseLandmarker GPU failed, CPU:', e);
+        poseLandmarker = await PoseLandmarker.createFromOptions(vision, poseOpts('CPU'));
+        mediapipePoseDelegate = 'CPU';
+    }
+    console.info(`[RoofLeak] pose delegate: ${mediapipePoseDelegate}, numPoses=${np}`);
+}
 
 let gameLayout = { w: 800, h: 600, minSide: 600 };
 
@@ -939,9 +796,7 @@ function resizeCanvas() {
 
     if ((iw < vw || ih < vh) && !loggedCanvasBufferCap) {
         loggedCanvasBufferCap = true;
-        console.info(
-            `[Blasters] canvas buffer capped ${iw}×${ih} px (window ${vw}×${vh}) — saves GPU/CPU on large displays`
-        );
+        console.info(`[RoofLeak] canvas buffer capped ${iw}×${ih} px (window ${vw}×${vh})`);
     }
 
     gameLayout.w = iw;
@@ -1068,7 +923,7 @@ async function initializeModels() {
             `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MEDIAPIPE_TASKS_VISION_WASM_VER}/wasm`
         );
     }
-    console.info(`[Blasters] MediaPipe WASM: ${visionWasmSource}`);
+    console.info(`[RoofLeak] MediaPipe WASM: ${visionWasmSource}`);
 
     visionTasksResolver = vision;
     await createPoseLandmarkerInstance();
@@ -1078,108 +933,156 @@ async function initializeModels() {
     showMainMenu();
 }
 
-class Projectile {
-    constructor(x, y, vx, vy, color) {
-        this.x = x;
-        this.y = y;
-        this.vx = vx;
-        this.vy = vy;
-        this.color = color;
-        this.life = 1;
-        this.r = 8;
-        this.maxDist = 920;
-        this.dist = 0;
-        this.dead = false;
-        const spd = Math.hypot(vx, vy);
-        this.nx = spd > 0.01 ? vx / spd : 1;
-        this.ny = spd > 0.01 ? vy / spd : 0;
+function randSpawnDelay() {
+    const { spawnIntervalMinMs, spawnIntervalMaxMs } = GAME_CFG;
+    return spawnIntervalMinMs + Math.random() * (spawnIntervalMaxMs - spawnIntervalMinMs);
+}
+
+function randRedSpawnDelay() {
+    const { redDropSpawnMinMs, redDropSpawnMaxMs } = GAME_CFG;
+    return redDropSpawnMinMs + Math.random() * (redDropSpawnMaxMs - redDropSpawnMinMs);
+}
+
+function tryStartDropGrowth(kind = 'normal') {
+    if (drops.length >= GAME_CFG.maxDrops) return;
+    if (kind === 'red') {
+        const growingRed = leakSpots.filter((s) => s.growing && s.kind === 'red').length;
+        if (growingRed >= GAME_CFG.maxGrowingRedDrops) return;
+    } else {
+        const growingNormal = leakSpots.filter((s) => s.growing && s.kind !== 'red').length;
+        if (growingNormal >= GAME_CFG.maxGrowingDrops) return;
     }
 
-    update(dt = 1) {
-        const step = Math.hypot(this.vx, this.vy) * dt;
-        this.dist += step;
-        this.x += this.vx * dt;
-        this.y += this.vy * dt;
-        this.life -= 0.038 * dt;
-        if (this.dist > this.maxDist || this.life <= 0) this.dead = true;
-        if (this.x < -80 || this.y < -80 || this.x > gameLayout.w + 80 || this.y > gameLayout.h + 80) {
-            this.dead = true;
+    const pos = randomLeakSpotPosition();
+    leakSpots.push({
+        x: pos.x,
+        y: pos.y,
+        grow: 0,
+        growing: true,
+        kind
+    });
+}
+
+function updateGrowingSpots(dt) {
+    for (let i = leakSpots.length - 1; i >= 0; i--) {
+        const spot = leakSpots[i];
+        if (!spot.growing) {
+            leakSpots.splice(i, 1);
+            continue;
         }
-    }
-
-    draw(ctx) {
-        const a = Math.max(0, this.life);
-        const ang = Math.atan2(this.ny, this.nx);
-        ctx.save();
-        ctx.translate(this.x, this.y);
-        ctx.rotate(ang);
-        ctx.fillStyle = this.color;
-        ctx.shadowColor = this.color;
-        ctx.shadowBlur = 14;
-        ctx.globalAlpha = 0.9 * a;
-        ctx.beginPath();
-        const tipX = 23;
-        const tailX = -14;
-        ctx.moveTo(tipX, 0);
-        ctx.bezierCurveTo(6, 8.5, tailX + 5, 9, tailX, 0);
-        ctx.bezierCurveTo(tailX + 5, -9, 6, -8.5, tipX, 0);
-        ctx.closePath();
-        ctx.fill();
-        ctx.shadowBlur = 0;
-        ctx.globalAlpha = 0.55 * a;
-        ctx.fillStyle = '#ffffff';
-        ctx.beginPath();
-        ctx.ellipse(tailX + 3, -1.8, 3.4, 2.2, -0.35, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
+        spot.grow += dt / (GAME_CFG.dropGrowDurationMs / (1000 / 60));
+        if (spot.grow >= 1) {
+            releaseFallDrop(spot);
+            leakSpots.splice(i, 1);
+        }
     }
 }
 
-class HitBurst {
-    constructor(x, y, color) {
-        this.x = x;
-        this.y = y;
-        this.color = color;
-        this.life = 1;
-        this.rot = Math.random() * Math.PI * 2;
+function releaseFallDrop(spot) {
+    const { minSide } = gameLayout;
+    const r = minSide * GAME_CFG.dropRadiusMul;
+    const hang = r * 1.75;
+    drops.push({
+        x: spot.x,
+        y: spot.y + hang,
+        vy: minSide * GAME_CFG.dropSpeedMul * (0.88 + Math.random() * 0.24),
+        r,
+        kind: spot.kind === 'red' ? 'red' : 'normal',
+        dead: false
+    });
+}
+
+function traceTeardropPath(ctx, x, y, r) {
+    const tipY = y - r * 1.38;
+    const botY = y + r * 0.52;
+    const w = r * 0.76;
+    ctx.moveTo(x, tipY);
+    ctx.bezierCurveTo(x + w * 1.05, tipY + r * 0.82, x + w * 0.98, botY - r * 0.08, x, botY);
+    ctx.bezierCurveTo(x - w * 0.98, botY - r * 0.08, x - w * 1.05, tipY + r * 0.82, x, tipY);
+    ctx.closePath();
+}
+
+function drawDropBulb(ctx, x, y, r, alpha = 1, variant = 'normal') {
+    if (r <= 0.5) return;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+
+    traceTeardropPath(ctx, x, y, r);
+    const tipY = y - r * 1.38;
+    const botY = y + r * 0.52;
+    const bodyGrad = ctx.createLinearGradient(x, tipY, x, botY);
+    if (variant === 'rust') {
+        bodyGrad.addColorStop(0, 'rgba(225, 195, 145, 0.24)');
+        bodyGrad.addColorStop(0.32, 'rgba(175, 115, 65, 0.58)');
+        bodyGrad.addColorStop(0.72, 'rgba(125, 68, 38, 0.76)');
+        bodyGrad.addColorStop(1, 'rgba(78, 42, 22, 0.86)');
+    } else {
+        bodyGrad.addColorStop(0, 'rgba(210, 240, 255, 0.18)');
+        bodyGrad.addColorStop(0.32, 'rgba(110, 195, 255, 0.42)');
+        bodyGrad.addColorStop(0.72, 'rgba(55, 145, 235, 0.58)');
+        bodyGrad.addColorStop(1, 'rgba(25, 85, 175, 0.72)');
     }
-    update(dt = 1) {
-        this.life -= 0.11 * dt;
-    }
-    draw(ctx) {
-        const t = Math.max(0, this.life);
-        if (t <= 0) return;
-        const u = 1 - t;
-        ctx.save();
-        ctx.translate(this.x, this.y);
-        ctx.rotate(this.rot);
-        ctx.globalAlpha = t * 0.95;
-        const rays = 14;
-        for (let r = 0; r < rays; r++) {
-            const ang = (r / rays) * Math.PI * 2;
-            ctx.strokeStyle = this.color;
-            ctx.lineWidth = 2.2;
-            ctx.shadowBlur = 14;
-            ctx.shadowColor = '#00f3ff';
-            ctx.beginPath();
-            const inner = 10 + u * 28;
-            const outer = 32 + u * 110;
-            ctx.moveTo(Math.cos(ang) * inner, Math.sin(ang) * inner);
-            ctx.lineTo(Math.cos(ang) * outer, Math.sin(ang) * outer);
-            ctx.stroke();
-        }
-        ctx.shadowBlur = 0;
-        ctx.globalAlpha = t * 0.55;
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 2;
+    ctx.fillStyle = bodyGrad;
+    ctx.fill();
+
+    ctx.strokeStyle = variant === 'rust' ? 'rgba(185, 125, 75, 0.5)' : 'rgba(190, 235, 255, 0.42)';
+    ctx.lineWidth = Math.max(0.8, r * 0.07);
+    ctx.stroke();
+
+    ctx.fillStyle = variant === 'rust' ? 'rgba(240, 210, 165, 0.52)' : 'rgba(255, 255, 255, 0.62)';
+    ctx.beginPath();
+    ctx.ellipse(x - r * 0.24, y - r * 0.12, r * 0.17, r * 0.3, -0.35, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = variant === 'rust' ? 'rgba(210, 160, 110, 0.28)' : 'rgba(255, 255, 255, 0.22)';
+    ctx.beginPath();
+    ctx.ellipse(x + r * 0.14, y + r * 0.08, r * 0.07, r * 0.11, 0.25, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+}
+
+function drawLeakSpots(ctx) {
+    const { minSide } = gameLayout;
+    const rMax = minSide * GAME_CFG.dropRadiusMul;
+
+    for (const spot of leakSpots) {
+        const isRust = spot.kind === 'red';
+        ctx.fillStyle = isRust ? 'rgba(92, 58, 32, 0.68)' : 'rgba(55, 70, 90, 0.55)';
         ctx.beginPath();
-        ctx.arc(0, 0, 12 + u * 80, 0, Math.PI * 2);
+        ctx.ellipse(spot.x, spot.y, rMax * 0.85, rMax * 0.46, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        if (!spot.growing || spot.grow <= 0) continue;
+
+        const t = spot.grow * spot.grow;
+        const r = rMax * (0.12 + 0.88 * t);
+        const hang = rMax * 1.75 * t;
+        const tipY = spot.y + hang;
+        const dropTipY = tipY - r * 1.38;
+
+        const threadGrad = ctx.createLinearGradient(spot.x, spot.y, spot.x, dropTipY);
+        if (isRust) {
+            threadGrad.addColorStop(0, `rgba(195, 140, 85, ${0.2 + 0.28 * t})`);
+            threadGrad.addColorStop(1, `rgba(155, 95, 52, ${0.48 + 0.42 * t})`);
+        } else {
+            threadGrad.addColorStop(0, `rgba(150, 205, 255, ${0.15 + 0.25 * t})`);
+            threadGrad.addColorStop(1, `rgba(120, 200, 255, ${0.45 + 0.45 * t})`);
+        }
+        ctx.strokeStyle = threadGrad;
+        ctx.lineCap = 'round';
+        ctx.lineWidth = Math.max(1, r * 0.14 + t * 1.2);
+        ctx.beginPath();
+        ctx.moveTo(spot.x, spot.y);
+        ctx.lineTo(spot.x, dropTipY + r * 0.08);
         ctx.stroke();
-        ctx.restore();
+
+        drawDropBulb(ctx, spot.x, tipY, r, 0.55 + 0.45 * t, isRust ? 'rust' : 'normal');
     }
 }
 
-class Particle {
+class SplashParticle {
     constructor(x, y, color, kind = 'dot') {
         this.x = x;
         this.y = y;
@@ -1187,115 +1090,168 @@ class Particle {
         this.kind = kind;
         this.life = 1;
         const ang = Math.random() * Math.PI * 2;
-        if (kind === 'spark') {
-            const spd = 16 + Math.random() * 22;
-            this.vx = Math.cos(ang) * spd;
-            this.vy = Math.sin(ang) * spd;
-            this.sparkAngle = ang;
-            this.sparkLen = 14 + Math.random() * 20;
-            this.drag = 0.9;
-        } else {
-            this.vx = Math.cos(ang) * (3 + Math.random() * 10);
-            this.vy = Math.sin(ang) * (3 + Math.random() * 10);
-            this.r = 3.5 + Math.random() * 6;
-            this.drag = 0.985;
-        }
+        const spd = kind === 'ring' ? 0 : 2 + Math.random() * 8;
+        this.vx = Math.cos(ang) * spd;
+        this.vy = Math.sin(ang) * spd - (kind === 'dot' ? 3 : 0);
+        this.r = 2 + Math.random() * 4;
     }
-    update(dt = 1) {
+
+    update(dt) {
         this.x += this.vx * dt;
         this.y += this.vy * dt;
-        this.vx *= this.drag;
-        this.vy *= this.drag;
-        this.life -= (this.kind === 'spark' ? 0.07 : 0.042) * dt;
+        this.vy += 0.18 * dt;
+        this.life -= (this.kind === 'ring' ? 0.06 : 0.045) * dt;
     }
+
     draw(ctx) {
         const a = Math.max(0, this.life);
         if (a <= 0) return;
         ctx.save();
-        if (this.kind === 'spark') {
-            ctx.globalAlpha = a;
-            ctx.strokeStyle = this.color;
-            ctx.lineWidth = 2.8;
-            ctx.shadowBlur = 12;
-            ctx.shadowColor = '#ffffff';
-            const L = this.sparkLen * (0.4 + 0.6 * a);
-            ctx.beginPath();
-            ctx.moveTo(
-                this.x - Math.cos(this.sparkAngle) * L * 0.35,
-                this.y - Math.sin(this.sparkAngle) * L * 0.35
-            );
-            ctx.lineTo(this.x + Math.cos(this.sparkAngle) * L, this.y + Math.sin(this.sparkAngle) * L);
-            ctx.stroke();
-            ctx.restore();
-            return;
-        }
-        const rad = this.r * (0.55 + 0.45 * a);
-        const g = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, rad);
-        g.addColorStop(0, 'rgba(255,255,255,0.95)');
-        g.addColorStop(0.25, this.color);
-        g.addColorStop(0.7, this.color);
-        g.addColorStop(1, 'rgba(255,255,255,0)');
         ctx.globalAlpha = a;
-        ctx.fillStyle = g;
-        ctx.beginPath();
-        ctx.arc(this.x, this.y, rad, 0, Math.PI * 2);
-        ctx.fill();
+        if (this.kind === 'ring') {
+            ctx.strokeStyle = this.color;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, (1 - a) * 28 + 6, 0, Math.PI * 2);
+            ctx.stroke();
+        } else {
+            ctx.fillStyle = this.color;
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.r * a, 0, Math.PI * 2);
+            ctx.fill();
+        }
         ctx.restore();
     }
 }
 
-const POSE_BODY_HANDS = [
-    { key: 'PoseLeft', wristIdx: 15, indexIdx: 19, pinkyIdx: 17, thumbIdx: 21 },
-    { key: 'PoseRight', wristIdx: 16, indexIdx: 20, pinkyIdx: 18, thumbIdx: 22 }
-];
-
-const POSE_HAND_MIN_VISIBILITY = 0.55;
-
-function midpoint(a, b) {
-    return { x: (a.x + b.x) * 0.5, y: (a.y + b.y) * 0.5 };
+function spawnSplash(x, y, color) {
+    particles.push(new SplashParticle(x, y, color, 'ring'));
+    for (let i = 0; i < 8; i++) particles.push(new SplashParticle(x, y, color, 'dot'));
 }
 
-function buildSyntheticHandFromPose(poseLandmarks, def) {
-    const wrist = poseLandmarks[def.wristIdx];
-    const indexT = poseLandmarks[def.indexIdx];
-    const pinkyT = poseLandmarks[def.pinkyIdx];
-    const thumbT = poseLandmarks[def.thumbIdx];
-    if (!wrist || !indexT || !pinkyT) return null;
-    const vis = wrist.visibility ?? 1;
-    if (vis < POSE_HAND_MIN_VISIBILITY) return null;
+function computeBucket(leftWrist, rightWrist, shoulderW, poseKey, nowMs) {
+    const cx = (leftWrist.x + rightWrist.x) * 0.5;
+    const topY = (leftWrist.y + rightWrist.y) * 0.5;
+    const isMug = isMugMode(poseKey, nowMs);
+    const vesselMul = isMug ? GAME_CFG.mugSizeMul : 1;
+    const width = shoulderW * GAME_CFG.bucketShoulderMul * vesselMul;
+    const height = getVesselDisplayHeight(width, isMug);
 
-    const indexPip = midpoint(wrist, indexT);
-    const pinkyDip = midpoint(wrist, pinkyT);
-    const middleT = midpoint(indexT, pinkyT);
-    const middlePip = midpoint(wrist, middleT);
-    const ringT = midpoint(middleT, pinkyT);
-    const ringPip = midpoint(wrist, ringT);
-    const thumb = thumbT || midpoint(wrist, indexT);
+    const dx = rightWrist.x - leftWrist.x;
+    const dy = rightWrist.y - leftWrist.y;
+    const angle = Math.atan2(dy, dx) + BUCKET_ANGLE_FUDGE;
+    const catchHalfW = width * 0.44;
+    const catchBottomY = topY + height * 0.38;
 
-    const lm = new Array(21);
-    for (let i = 0; i < 21; i++) lm[i] = wrist;
-    lm[0] = wrist;
-    lm[1] = midpoint(wrist, thumb);
-    lm[2] = midpoint(wrist, thumb);
-    lm[3] = midpoint(wrist, thumb);
-    lm[4] = thumb;
-    lm[5] = midpoint(wrist, indexT);
-    lm[6] = midpoint(wrist, indexT);
-    lm[7] = indexPip;
-    lm[8] = indexT;
-    lm[9] = middlePip;
-    lm[10] = middlePip;
-    lm[11] = middlePip;
-    lm[12] = middleT;
-    lm[13] = ringPip;
-    lm[14] = ringPip;
-    lm[15] = ringPip;
-    lm[16] = ringT;
-    lm[17] = pinkyDip;
-    lm[18] = pinkyDip;
-    lm[19] = pinkyDip;
-    lm[20] = pinkyT;
-    return lm;
+    return {
+        cx,
+        topY,
+        bottomY: topY + height,
+        width,
+        height,
+        angle,
+        shoulderW,
+        leftWrist,
+        rightWrist,
+        catchHalfW,
+        catchBottomY,
+        isMug,
+        poseKey
+    };
+}
+
+function dropCaughtByBucket(drop, bucket) {
+    if (!bucket) return false;
+    const inX = Math.abs(drop.x - bucket.cx) <= bucket.catchHalfW + drop.r * 0.5;
+    const inY = drop.y + drop.r >= bucket.topY - drop.r && drop.y - drop.r <= bucket.catchBottomY;
+    return inX && inY;
+}
+
+function drawCeiling(ctx) {
+    const { w, minSide } = gameLayout;
+    const grad = ctx.createLinearGradient(0, 0, 0, minSide * 0.14);
+    grad.addColorStop(0, 'rgba(30, 28, 24, 0.95)');
+    grad.addColorStop(1, 'rgba(30, 28, 24, 0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, minSide * 0.14);
+
+    ctx.fillStyle = 'rgba(55, 50, 45, 0.85)';
+    ctx.fillRect(0, 0, w, minSide * 0.018);
+}
+
+function drawWater(ctx) {
+    const { w, h } = gameLayout;
+    const surfaceY = h - waterLevel * h;
+    if (waterLevel <= 0.001) return;
+
+    const grad = ctx.createLinearGradient(0, surfaceY, 0, h);
+    grad.addColorStop(0, 'rgba(60, 160, 255, 0.72)');
+    grad.addColorStop(0.35, 'rgba(30, 110, 220, 0.82)');
+    grad.addColorStop(1, 'rgba(10, 50, 120, 0.92)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, surfaceY, w, h - surfaceY);
+
+    ctx.strokeStyle = 'rgba(180, 230, 255, 0.65)';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    const waveAmp = Math.min(8, waterLevel * h * 0.025);
+    for (let x = 0; x <= w; x += 6) {
+        const y = surfaceY + Math.sin(x * 0.025 + gameTime * 0.08) * waveAmp;
+        if (x === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    const dangerY = h - GAME_CFG.waterGameOverFrac * h;
+    if (waterLevel >= GAME_CFG.waterGameOverFrac * 0.6) {
+        ctx.strokeStyle = 'rgba(255, 80, 80, 0.45)';
+        ctx.setLineDash([8, 8]);
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(0, dangerY);
+        ctx.lineTo(w, dangerY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+    }
+}
+
+function drawBucket(ctx, bucket) {
+    if (!bucket) return;
+
+    const { cx, topY, width, height, angle, isMug } = bucket;
+    const useCup = isMug && cupSpriteReady && cupSprite.naturalWidth;
+    const useBucket = !isMug && bucketSpriteReady && bucketSprite.naturalWidth;
+
+    if (!useCup && !useBucket) {
+        ctx.save();
+        ctx.translate(cx, topY);
+        ctx.rotate(angle);
+        ctx.fillStyle = isMug ? 'rgba(255, 210, 80, 0.85)' : 'rgba(200, 140, 60, 0.85)';
+        ctx.fillRect(-width * 0.5, 0, width, height);
+        ctx.restore();
+        return;
+    }
+
+    const img = useCup ? cupSprite : bucketSprite;
+    const pivotXFrac = useCup ? CUP_PIVOT_X_FRAC : BUCKET_PIVOT_X_FRAC;
+    const pivotYFrac = useCup ? CUP_PIVOT_Y_FRAC : BUCKET_PIVOT_Y_FRAC;
+    const iw = img.naturalWidth;
+    const ih = img.naturalHeight;
+    const scale = width / iw;
+    const pivotX = iw * pivotXFrac;
+    const pivotY = ih * pivotYFrac;
+
+    ctx.save();
+    ctx.translate(cx, topY);
+    ctx.rotate(angle + BUCKET_ANGLE_FUDGE);
+    ctx.scale(scale, -scale);
+    ctx.translate(-pivotX, -pivotY);
+    ctx.drawImage(img, 0, 0);
+    ctx.restore();
+}
+
+function drawDrop(ctx, drop) {
+    drawDropBulb(ctx, drop.x, drop.y, drop.r, 1, drop.kind === 'red' ? 'rust' : 'normal');
 }
 
 function getOrderedPersons(poseResults) {
@@ -1314,9 +1270,6 @@ function getOrderedPersons(poseResults) {
         .map((p, i) => ({ lm: p.lm, key: `Pose#${i}` }));
 }
 
-/** Центр плеч в экранных координатах — не даём Pose#0/#1 перепрыгивать между людьми при перекрёстке. */
-let stablePoseShoulderMid = [];
-
 function otherPoseKey(k) {
     return k === 'Pose#0' ? 'Pose#1' : 'Pose#0';
 }
@@ -1330,10 +1283,6 @@ function shoulderMidScreen(lm, getScreenPoint) {
     return { x: (a.x + b.x) * 0.5, y: (a.y + b.y) * 0.5 };
 }
 
-/**
- * Сохраняет poseKey за «слотом» по близости центра плеч к прошлому кадру.
- * Пустой кадр не трогает stable (см. prunePlayerArmorState).
- */
 function bindStablePoseKeys(sortedPersons, getScreenPoint) {
     const items = [];
     for (const { lm } of sortedPersons) {
@@ -1439,725 +1388,87 @@ function bindStablePoseKeys(sortedPersons, getScreenPoint) {
     ];
 }
 
-const HAND_INPUT_INDICES = [15, 16, 17, 18, 19, 20, 21, 22];
-const HAND_INPUT_ALPHA = 0.55;
-const HAND_INPUT_TELEPORT = 0.2;
-const HAND_INPUT_TTL_MS = 600;
-const handInputSmoothByKey = new Map();
-
-function smoothHandInputLm(personKey, rawLm, nowMs) {
-    let state = handInputSmoothByKey.get(personKey);
-    if (!state) {
-        state = { lm: {}, lastSeenMs: nowMs };
-        handInputSmoothByKey.set(personKey, state);
-    }
-    state.lastSeenMs = nowMs;
-    const out = rawLm.slice();
-    for (const i of HAND_INPUT_INDICES) {
-        const r = rawLm[i];
-        if (!r) continue;
-        const prev = state.lm[i];
-        if (!prev || Math.hypot(r.x - prev.x, r.y - prev.y) > HAND_INPUT_TELEPORT) {
-            state.lm[i] = { x: r.x, y: r.y, z: r.z, visibility: r.visibility };
-        } else {
-            const a = HAND_INPUT_ALPHA;
-            state.lm[i] = {
-                x: prev.x * (1 - a) + r.x * a,
-                y: prev.y * (1 - a) + r.y * a,
-                z: (prev.z ?? 0) * (1 - a) + (r.z ?? 0) * a,
-                visibility: r.visibility
-            };
-        }
-        out[i] = state.lm[i];
-    }
-    return out;
-}
-
-function pruneHandInputSmoothState(activeKeys, nowMs) {
-    for (const k of [...handInputSmoothByKey.keys()]) {
-        if (activeKeys.has(k)) continue;
-        const s = handInputSmoothByKey.get(k);
-        if (!s || nowMs - s.lastSeenMs > HAND_INPUT_TTL_MS) {
-            handInputSmoothByKey.delete(k);
-        }
-    }
-}
-
-function buildKeyedHandsFromPose(orderedPersons) {
-    if (!orderedPersons.length) return [];
-    const nowMs = performance.now();
-    const activeKeys = new Set(orderedPersons.map((p) => p.key));
-    pruneHandInputSmoothState(activeKeys, nowMs);
-    const out = [];
-    for (let p = 0; p < orderedPersons.length; p++) {
-        const pkMatch = orderedPersons[p].key.match(/^Pose#(\d+)$/);
-        const playerSuffix = pkMatch ? parseInt(pkMatch[1], 10) : p;
-        const suffix = orderedPersons.length > 1 ? `#${playerSuffix}` : '';
-        const stableLm = smoothHandInputLm(orderedPersons[p].key, orderedPersons[p].lm, nowMs);
-        for (const def of POSE_BODY_HANDS) {
-            const lm = buildSyntheticHandFromPose(stableLm, def);
-            if (!lm) continue;
-            out.push({ key: `${def.key}${suffix}`, landmarks: lm });
-        }
-    }
-    return out;
-}
-
-const FACE_LM_INDICES = new Set([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
-const POSE_FACE_ALPHA = 0.28;
-const POSE_BODY_ALPHA = 0.4;
-const POSE_TELEPORT_THRESHOLD = 0.22;
-const POSE_STATE_TTL_MS = 600;
-const poseSmoothByKey = new Map();
-
-function smoothPoseLandmarks(personKey, rawLm, nowMs) {
-    let state = poseSmoothByKey.get(personKey);
-    if (!state) {
-        state = { lm: {}, lastSeenMs: nowMs };
-        poseSmoothByKey.set(personKey, state);
-    }
-    state.lastSeenMs = nowMs;
-    const out = new Array(rawLm.length);
-    for (let i = 0; i < rawLm.length; i++) {
-        const r = rawLm[i];
-        if (!r) {
-            out[i] = r;
-            continue;
-        }
-        const prev = state.lm[i];
-        const alpha = FACE_LM_INDICES.has(i) ? POSE_FACE_ALPHA : POSE_BODY_ALPHA;
-        if (!prev || Math.hypot(r.x - prev.x, r.y - prev.y) > POSE_TELEPORT_THRESHOLD) {
-            state.lm[i] = { x: r.x, y: r.y, z: r.z, visibility: r.visibility };
-        } else {
-            state.lm[i] = {
-                x: prev.x * (1 - alpha) + r.x * alpha,
-                y: prev.y * (1 - alpha) + r.y * alpha,
-                z: (prev.z ?? 0) * (1 - alpha) + (r.z ?? 0) * alpha,
-                visibility: r.visibility
-            };
-        }
-        out[i] = state.lm[i];
-    }
-    return out;
-}
-
-function prunePoseSmoothState(activeKeys, nowMs) {
-    for (const k of [...poseSmoothByKey.keys()]) {
-        if (activeKeys.has(k)) continue;
-        const s = poseSmoothByKey.get(k);
-        if (!s || nowMs - s.lastSeenMs > POSE_STATE_TTL_MS) {
-            poseSmoothByKey.delete(k);
-        }
-    }
-}
-
-function poseKeyFromHandKey(handKey) {
-    const m = handKey.match(/#(\d+)$/);
-    const idx = m ? parseInt(m[1], 10) : 0;
-    return `Pose#${idx}`;
-}
-
-function playerIndexFromHandKey(handKey) {
-    const m = handKey.match(/#(\d+)$/);
+function playerIndexFromPoseKey(poseKey) {
+    const m = poseKey.match(/^Pose#(\d+)$/);
     return m ? parseInt(m[1], 10) : 0;
 }
 
-function circleHit(ax, ay, ar, bx, by, br) {
-    const dx = ax - bx;
-    const dy = ay - by;
-    const rr = ar + br;
-    return dx * dx + dy * dy <= rr * rr;
-}
-
-/** Руки, кисти и ноги — не рисуем голубыми сегментами. Остаются лицо, плечи, торс 11–23–24–12, таз 23–24. */
-const SKIP_POSE_LIMB_SEGMENTS = new Set([
-    '11-13',
-    '13-15',
-    '12-14',
-    '14-16',
-    '15-17',
-    '15-19',
-    '15-21',
-    '16-18',
-    '16-20',
-    '16-22',
-    '17-19',
-    '18-20',
-    '23-25',
-    '25-27',
-    '27-29',
-    '29-31',
-    '27-31',
-    '24-26',
-    '26-28',
-    '28-30',
-    '30-32',
-    '28-32'
-]);
-
-function shouldSkipPoseLimbConnection(connection) {
-    const a = Math.min(connection.start, connection.end);
-    const b = Math.max(connection.start, connection.end);
-    return SKIP_POSE_LIMB_SEGMENTS.has(`${a}-${b}`);
-}
-
-/** Голубой скелет MediaPipe (лицо/торс) — отключён, чтобы не мешал оверлею. */
-const DRAW_POSE_SKELETON_LINES = false;
-
-function makeFourGauntletImages() {
-    return [new Image(), new Image(), new Image(), new Image()];
-}
-
-const gauntletSpritesByKey = {
-    lu: makeFourGauntletImages(),
-    ld: makeFourGauntletImages(),
-    ru: makeFourGauntletImages(),
-    rd: makeFourGauntletImages()
-};
-
-const GAUNTLET_URLS_BY_KEY = {
-    lu: [
-        new URL('./src/assets/img/L up.png', import.meta.url).href,
-        new URL('./src/assets/img/L up 1d.png', import.meta.url).href,
-        new URL('./src/assets/img/L up 2d.png', import.meta.url).href,
-        new URL('./src/assets/img/L up 3d.png', import.meta.url).href
-    ],
-    ld: [
-        new URL('./src/assets/img/L down.png', import.meta.url).href,
-        new URL('./src/assets/img/L down 1d.png', import.meta.url).href,
-        new URL('./src/assets/img/L down 2d.png', import.meta.url).href,
-        new URL('./src/assets/img/L down 3d.png', import.meta.url).href
-    ],
-    ru: [
-        new URL('./src/assets/img/R up.png', import.meta.url).href,
-        new URL('./src/assets/img/R up 1d.png', import.meta.url).href,
-        new URL('./src/assets/img/R up 2d.png', import.meta.url).href,
-        new URL('./src/assets/img/R up 3d.png', import.meta.url).href
-    ],
-    rd: [
-        new URL('./src/assets/img/R down.png', import.meta.url).href,
-        new URL('./src/assets/img/R down 1d.png', import.meta.url).href,
-        new URL('./src/assets/img/R down 2d.png', import.meta.url).href,
-        new URL('./src/assets/img/R down 3d.png', import.meta.url).href
-    ]
-};
-
-const HELMET_HITS_TO_BREAK = 3;
-const VEST_HITS_TO_BREAK = 4;
-const GLOVE_HITS_TO_BREAK = 4;
-const HELMET_HIT_R_MUL = 0.5;
-const VEST_HIT_R_MUL = 0.52;
-const GLOVE_HIT_R_MUL = 0.2;
-
-/** По игроку (poseKey): урон жилета и шлема от столкновения с захватчиком. */
-const playerArmorByPoseKey = new Map();
-
-function prunePlayerArmorState(activePoseKeys) {
-    if (activePoseKeys.size === 0) return;
-    for (const k of [...playerArmorByPoseKey.keys()]) {
-        if (!activePoseKeys.has(k)) playerArmorByPoseKey.delete(k);
+function updateHandsFromPose(landmarks, getScreenPoint, poseKey) {
+    const lw = landmarks[15];
+    const rw = landmarks[16];
+    const ls = landmarks[11];
+    const rs = landmarks[12];
+    if (!lw || !rw || !ls || !rs) {
+        bucketByPoseKey.delete(poseKey);
+        return null;
     }
-}
-
-function getOrCreatePlayerArmor(poseKey) {
-    let a = playerArmorByPoseKey.get(poseKey);
-    if (!a) {
-        a = { vestHits: 0, helmetHits: 0, gloveLHits: 0, gloveRHits: 0 };
-        playerArmorByPoseKey.set(poseKey, a);
-    }
-    return a;
-}
-
-function getHelmetHitDisc(poseKey) {
-    const st = helmetPoseOverlayByKey.get(poseKey);
-    if (!st) return null;
-    const earSpan = Math.hypot(st.rx - st.lx, st.ry - st.ly);
-    if (earSpan < 10) return null;
-    const cx = (st.lx + st.rx) * 0.5;
-    const cy = (st.ly + st.ry) * 0.5 - earSpan * HELMET_CENTER_Y_OFF_FRAC;
-    return { x: cx, y: cy, r: earSpan * HELMET_HIT_R_MUL };
-}
-
-function getVestHitDisc(lm, getScreenPoint) {
-    const ls = lm[11];
-    const rs = lm[12];
-    const lh = lm[23];
-    const rh = lm[24];
-    if (!ls || !rs || !lh || !rh) return null;
-    const vis = Math.min(ls.visibility ?? 1, rs.visibility ?? 1, lh.visibility ?? 1, rh.visibility ?? 1);
-    if (vis < 0.25) return null;
-    const p11 = getScreenPoint(ls);
-    const p12 = getScreenPoint(rs);
-    const shoulderW = Math.hypot(p12.x - p11.x, p12.y - p11.y);
-    if (shoulderW < 14) return null;
-    const midS = { x: (p11.x + p12.x) * 0.5, y: (p11.y + p12.y) * 0.5 };
-    midS.y += shoulderW * VEST_ANCHOR_DOWN_MUL;
-    return { x: midS.x, y: midS.y, r: shoulderW * VEST_HIT_R_MUL };
-}
-
-function getGloveHitDisc(lm, getScreenPoint, drawHand, shoulderW) {
-    const idx = drawHand === 'right' ? 15 : 16;
-    const w = lm[idx];
-    if (!w) return null;
-    if ((w.visibility ?? 1) < 0.22) return null;
-    const p = getScreenPoint(w);
-    const r = Math.max(26, shoulderW * GLOVE_HIT_R_MUL);
-    return { x: p.x, y: p.y, r };
-}
-
-function tryInvaderPlayerArmorCollision(inv, orderedPersons, smoothedLmByPoseKey, getScreenPoint) {
-    if (!(inv instanceof Invader) || inv.destroyed) return;
-    let best = null;
-    for (const { key: poseKey } of orderedPersons) {
-        const lm = smoothedLmByPoseKey.get(poseKey);
-        if (!lm) continue;
-        const lmLs = lm[11];
-        const lmRs = lm[12];
-        if (!lmLs || !lmRs) continue;
-        const p11 = getScreenPoint(lmLs);
-        const p12 = getScreenPoint(lmRs);
-        const shoulderW = Math.hypot(p12.x - p11.x, p12.y - p11.y);
-        if (shoulderW < 14) continue;
-
-        const armor = getOrCreatePlayerArmor(poseKey);
-        const hc = armor.helmetHits < HELMET_HITS_TO_BREAK ? getHelmetHitDisc(poseKey) : null;
-        const vc = armor.vestHits < VEST_HITS_TO_BREAK ? getVestHitDisc(lm, getScreenPoint) : null;
-        const gLeft =
-            armor.gloveLHits < GLOVE_HITS_TO_BREAK ? getGloveHitDisc(lm, getScreenPoint, 'right', shoulderW) : null;
-        const gRight =
-            armor.gloveRHits < GLOVE_HITS_TO_BREAK ? getGloveHitDisc(lm, getScreenPoint, 'left', shoulderW) : null;
-
-        const ix = inv.x;
-        const iy = inv.y;
-        const ir = inv.hitR;
-        if (hc && circleHit(ix, iy, ir, hc.x, hc.y, hc.r)) {
-            const d = Math.hypot(ix - hc.x, iy - hc.y);
-            if (!best || d < best.dist) best = { poseKey, kind: 'helmet', cx: hc.x, cy: hc.y, dist: d };
-        }
-        if (vc && circleHit(ix, iy, ir, vc.x, vc.y, vc.r)) {
-            const d = Math.hypot(ix - vc.x, iy - vc.y);
-            if (!best || d < best.dist) best = { poseKey, kind: 'vest', cx: vc.x, cy: vc.y, dist: d };
-        }
-        if (gLeft && circleHit(ix, iy, ir, gLeft.x, gLeft.y, gLeft.r)) {
-            const d = Math.hypot(ix - gLeft.x, iy - gLeft.y);
-            if (!best || d < best.dist) best = { poseKey, kind: 'gloveL', cx: gLeft.x, cy: gLeft.y, dist: d };
-        }
-        if (gRight && circleHit(ix, iy, ir, gRight.x, gRight.y, gRight.r)) {
-            const d = Math.hypot(ix - gRight.x, iy - gRight.y);
-            if (!best || d < best.dist) best = { poseKey, kind: 'gloveR', cx: gRight.x, cy: gRight.y, dist: d };
-        }
-    }
-    if (!best) return;
-
-    const a = getOrCreatePlayerArmor(best.poseKey);
-    let pieceBroken = false;
-    if (best.kind === 'helmet') {
-        if (a.helmetHits < HELMET_HITS_TO_BREAK) {
-            a.helmetHits += 1;
-            pieceBroken = a.helmetHits >= HELMET_HITS_TO_BREAK;
-        }
-    } else if (best.kind === 'vest') {
-        if (a.vestHits < VEST_HITS_TO_BREAK) {
-            a.vestHits += 1;
-            pieceBroken = a.vestHits >= VEST_HITS_TO_BREAK;
-        }
-    } else if (best.kind === 'gloveL') {
-        if (a.gloveLHits < GLOVE_HITS_TO_BREAK) {
-            a.gloveLHits += 1;
-            pieceBroken = a.gloveLHits >= GLOVE_HITS_TO_BREAK;
-        }
-    } else if (best.kind === 'gloveR') {
-        if (a.gloveRHits < GLOVE_HITS_TO_BREAK) {
-            a.gloveRHits += 1;
-            pieceBroken = a.gloveRHits >= GLOVE_HITS_TO_BREAK;
-        }
+    const vis = Math.min(lw.visibility ?? 1, rw.visibility ?? 1, ls.visibility ?? 1, rs.visibility ?? 1);
+    if (vis < GAME_CFG.wristMinVisibility) {
+        bucketByPoseKey.delete(poseKey);
+        return null;
     }
 
-    inv.destroyed = true;
-    playHitSound();
-    particles.push(new HitBurst(inv.x, inv.y, inv.color));
-    for (let p = 0; p < 14; p++) particles.push(new Particle(inv.x, inv.y, inv.color, 'dot'));
-    for (let p = 0; p < 10; p++) particles.push(new Particle(inv.x, inv.y, inv.color, 'spark'));
-    if (pieceBroken) {
-        for (let p = 0; p < 28; p++) particles.push(new Particle(best.cx, best.cy, '#e0e0e0', 'dot'));
-        for (let p = 0; p < 22; p++) particles.push(new Particle(best.cx, best.cy, '#00f3ff', 'spark'));
-        particles.push(new HitBurst(best.cx, best.cy, '#ffffff'));
-    }
-}
-
-function makeThreeImages() {
-    return [new Image(), new Image(), new Image()];
-}
-
-const helmetSpritesByYaw = {
-    front: makeThreeImages(),
-    left: makeThreeImages(),
-    right: makeThreeImages()
-};
-
-const HELMET_URLS_BY_YAW = {
-    front: [
-        new URL('./src/assets/img/helmet front.png', import.meta.url).href,
-        new URL('./src/assets/img/helmet front 1D.png', import.meta.url).href,
-        new URL('./src/assets/img/helmet front 2d.png', import.meta.url).href
-    ],
-    left: [
-        new URL('./src/assets/img/helmet left.png', import.meta.url).href,
-        new URL('./src/assets/img/helmet left 1d.png', import.meta.url).href,
-        new URL('./src/assets/img/helmet left 2d.png', import.meta.url).href
-    ],
-    right: [
-        new URL('./src/assets/img/helmet right.png', import.meta.url).href,
-        new URL('./src/assets/img/helmet right 1d.png', import.meta.url).href,
-        new URL('./src/assets/img/helmet right 2d.png', import.meta.url).href
-    ]
-};
-
-const vestSpriteUrls = [
-    new URL('./src/assets/img/vest.png', import.meta.url).href,
-    new URL('./src/assets/img/vest 1d.png', import.meta.url).href,
-    new URL('./src/assets/img/vest 2d.png', import.meta.url).href,
-    new URL('./src/assets/img/vest 3d.png', import.meta.url).href
-];
-const vestSprites = vestSpriteUrls.map(() => new Image());
-
-function loadSpriteImage(img, src, label) {
-    return new Promise((resolve) => {
-        img.onload = () => resolve();
-        img.onerror = () => {
-            console.warn('[Blasters] нет спрайта:', label);
-            resolve();
-        };
-        img.src = src;
-    });
-}
-
-async function preloadCharacterSprites() {
-    const tasks = [
-        ...(['lu', 'ld', 'ru', 'rd']).flatMap((gk) =>
-            [0, 1, 2, 3].map((lvl) =>
-                loadSpriteImage(gauntletSpritesByKey[gk][lvl], GAUNTLET_URLS_BY_KEY[gk][lvl], `gauntlet ${gk} dmg${lvl}`)
-            )
-        ),
-        ...(['front', 'left', 'right']).flatMap((yaw) =>
-            [0, 1, 2].map((lvl) =>
-                loadSpriteImage(
-                    helmetSpritesByYaw[yaw][lvl],
-                    HELMET_URLS_BY_YAW[yaw][lvl],
-                    `helmet ${yaw} dmg${lvl}`
-                )
-            )
-        ),
-        ...vestSpriteUrls.map((url, i) => loadSpriteImage(vestSprites[i], url, `vest dmg${i}`))
-    ];
-    await Promise.all(tasks);
-}
-
-const GAUNTLET_PIVOT_X_FRAC = 0.5;
-const GAUNTLET_PIVOT_Y_FRAC = 0.72;
-const GAUNTLET_SCALE_PER_REACH = 0.0035;
-const GAUNTLET_SCALE_MIN = 0.12;
-const GAUNTLET_SCALE_MAX = 2.45;
-/** Эталонная ширина плеч в пикселях — база для дистанции до камеры. */
-const GAUNTLET_SHOULDER_REF_PX = 132;
-const GAUNTLET_DISTANCE_SCALE_MAX = 2.5;
-/** >1: на дальней дистанции (узкие плечи) кулаки ужимаются сильнее, чем шлем/жилет. */
-const GAUNTLET_DISTANCE_EXP = 1.38;
-/** Мин. доля эталона при расчёте дистанции (ниже — ещё мельче на дальнике). */
-const GAUNTLET_BODY_RATIO_FLOOR = 0.26;
-/**
- * Жёсткий потолок scale от ширины плеч (как у шлема/жилета ~ линейно от размера тела).
- * Подобрано так, чтобы близ/средне оставалось как сейчас, далеко — не раздуваться.
- */
-const GAUNTLET_SCALE_CAP_PER_SHOULDER_PX = 0.0155;
-/** Не даём «reach» из позы раздувать кулак сильнее пропорций тела. */
-const GAUNTLET_MAX_REACH_OVER_SHOULDER = 0.48;
-/** Угол направления «вперёд» кисти в PNG до поворота: вверх по картинке = -π/2, вниз = +π/2. */
-const GAUNTLET_ART_FORWARD_UP = -Math.PI / 2;
-const GAUNTLET_ART_FORWARD_DOWN = Math.PI / 2;
-/** Доп. поворот (рад.), если спрайт смещён относительно пальца. */
-const GAUNTLET_ANGLE_FUDGE = 0;
-
-/** Сглаживание кулака на экране: положение кисти/пальца (EMA). */
-const GAUNTLET_OVERLAY_SMOOTH_ALPHA = 0.15;
-/** Сглаживание ширины плеч для масштаба (один раз на игрока за кадр). */
-const GAUNTLET_SHOULDER_SMOOTH_ALPHA = 0.18;
-/** Гистерезис смены спрайта «кулак вверх/вниз», в долях minSide (уменьшает мигание). */
-const GAUNTLET_AIM_HYST_MUL = 0.016;
-
-const gauntletOverlayByHandKey = new Map();
-const gauntletShoulderByPoseKey = new Map();
-
-function pruneGauntletOverlayState(activePoseKeys) {
-    for (const k of [...gauntletOverlayByHandKey.keys()]) {
-        const sep = k.lastIndexOf('|');
-        const poseKey = sep >= 0 ? k.slice(0, sep) : k;
-        if (!activePoseKeys.has(poseKey)) gauntletOverlayByHandKey.delete(k);
-    }
-    for (const pk of [...gauntletShoulderByPoseKey.keys()]) {
-        if (!activePoseKeys.has(pk)) gauntletShoulderByPoseKey.delete(pk);
-    }
-}
-
-function updateGauntletShoulderSmoothed(poseKey, shoulderWRaw) {
-    const a = GAUNTLET_SHOULDER_SMOOTH_ALPHA;
-    let s = gauntletShoulderByPoseKey.get(poseKey);
-    if (!s) {
-        s = { sw: shoulderWRaw };
-        gauntletShoulderByPoseKey.set(poseKey, s);
-        return shoulderWRaw;
-    }
-    s.sw = s.sw * (1 - a) + shoulderWRaw * a;
-    return s.sw;
-}
-
-const HELMET_PIVOT_X_FRAC = 0.5;
-const HELMET_PIVOT_Y_FRAC = 0.52;
-/** Меньше — шлем ниже к лицу (от позиции между ушами вниз). */
-const HELMET_CENTER_Y_OFF_FRAC = 0.08;
-const HELMET_SCALE_MUL = 3.18;
-const HELMET_SCALE_MIN = 0.22;
-const HELMET_SCALE_MAX = 4.4;
-/** Сглаживание положения ушей/носа на экране (меньше — плавнее наклон шлема). */
-const HELMET_EAR_NOSE_SMOOTH_ALPHA = 0.14;
-/** Сглаживание метрики поворота головы влево/вправо (front / left / right PNG). */
-const HELMET_YAW_ASYM_SMOOTH_ALPHA = 0.11;
-/** |asym| выше — переключаемся с фронта на боковой спрайт. */
-const HELMET_YAW_ENTER_THRESH = 0.165;
-/** |asym| ниже — возвращаемся на фронт с бокового (гистерезис, меньше дребезга). */
-const HELMET_YAW_EXIT_TO_FRONT_THRESH = 0.072;
-const HELMET_ANGLE_FUDGE = 0;
-/** PNG шлема ориентирован «вниз головой» относительно линии ушей — доп. поворот на 180°. */
-const HELMET_SPRITE_ROTATION_FIX = Math.PI;
-
-/** Состояние шлема на игрока: сглаженные точки + устойчивый выбор вида. */
-const helmetPoseOverlayByKey = new Map();
-
-function pruneHelmetPoseOverlayState(activePoseKeys) {
-    for (const k of [...helmetPoseOverlayByKey.keys()]) {
-        if (!activePoseKeys.has(k)) helmetPoseOverlayByKey.delete(k);
-    }
-}
-
-function tickHelmetOverlayFromLm(poseKey, lm, getScreenPoint) {
-    const nose = lm[0];
-    const earL = lm[7];
-    const earR = lm[8];
-    if (!nose || !earL || !earR) return false;
-    const vis = Math.min(nose.visibility ?? 1, earL.visibility ?? 1, earR.visibility ?? 1);
-    if (vis < 0.28) return false;
-
-    const L = getScreenPoint(earL);
-    const R = getScreenPoint(earR);
-    const n = getScreenPoint(nose);
-    const aPos = HELMET_EAR_NOSE_SMOOTH_ALPHA;
-    const aYaw = HELMET_YAW_ASYM_SMOOTH_ALPHA;
-    let st = helmetPoseOverlayByKey.get(poseKey);
-    if (!st) {
-        st = {
-            lx: L.x,
-            ly: L.y,
-            rx: R.x,
-            ry: R.y,
-            nx: n.x,
-            ny: n.y,
-            asymF: 0,
-            yawKey: 'front'
-        };
-        helmetPoseOverlayByKey.set(poseKey, st);
-    } else {
-        st.lx = st.lx * (1 - aPos) + L.x * aPos;
-        st.ly = st.ly * (1 - aPos) + L.y * aPos;
-        st.rx = st.rx * (1 - aPos) + R.x * aPos;
-        st.ry = st.ry * (1 - aPos) + R.y * aPos;
-        st.nx = st.nx * (1 - aPos) + n.x * aPos;
-        st.ny = st.ny * (1 - aPos) + n.y * aPos;
-    }
-
-    const earSpan = Math.hypot(st.rx - st.lx, st.ry - st.ly);
-    if (earSpan < 10) return false;
-
-    const leftD = Math.hypot(st.nx - st.lx, st.ny - st.ly);
-    const rightD = Math.hypot(st.nx - st.rx, st.ny - st.ry);
-    const asym = (rightD - leftD) / earSpan;
-    st.asymF = st.asymF * (1 - aYaw) + asym * aYaw;
-    const a = st.asymF;
-
-    let cur = st.yawKey;
-    if (cur === 'front') {
-        if (a > HELMET_YAW_ENTER_THRESH) cur = 'right';
-        else if (a < -HELMET_YAW_ENTER_THRESH) cur = 'left';
-    } else if (cur === 'right') {
-        if (Math.abs(a) < HELMET_YAW_EXIT_TO_FRONT_THRESH) cur = 'front';
-        else if (a < -HELMET_YAW_ENTER_THRESH) cur = 'left';
-    } else {
-        if (Math.abs(a) < HELMET_YAW_EXIT_TO_FRONT_THRESH) cur = 'front';
-        else if (a > HELMET_YAW_ENTER_THRESH) cur = 'right';
-    }
-    st.yawKey = cur;
-    return true;
-}
-
-function drawHelmetSprite(ctx, _lm, _getScreenPoint, poseKey) {
-    const st = helmetPoseOverlayByKey.get(poseKey);
-    if (!st) return;
-    const earSpan = Math.hypot(st.rx - st.lx, st.ry - st.ly);
-    if (earSpan < 10) return;
-    const yawKey = st.yawKey;
-    const arm = playerArmorByPoseKey.get(poseKey);
-    const hHits = arm?.helmetHits ?? 0;
-    if (hHits >= HELMET_HITS_TO_BREAK) return;
-
-    const img = helmetSpritesByYaw[yawKey][hHits];
-    if (!img.complete || img.naturalWidth === 0) return;
-
-    const ang = Math.atan2(st.ry - st.ly, st.rx - st.lx);
-    const cx = (st.lx + st.rx) * 0.5;
-    const cy = (st.ly + st.ry) * 0.5 - earSpan * HELMET_CENTER_Y_OFF_FRAC;
-
-    const iw = img.naturalWidth;
-    const ih = img.naturalHeight;
-    const pivotX = iw * HELMET_PIVOT_X_FRAC;
-    const pivotY = ih * HELMET_PIVOT_Y_FRAC;
-    let scale = (earSpan * HELMET_SCALE_MUL) / iw;
-    scale = Math.max(HELMET_SCALE_MIN, Math.min(HELMET_SCALE_MAX, scale));
-
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.rotate(ang + HELMET_ANGLE_FUDGE + HELMET_SPRITE_ROTATION_FIX);
-    ctx.scale(scale, scale);
-    ctx.translate(-pivotX, -pivotY);
-    ctx.drawImage(img, 0, 0);
-    ctx.restore();
-}
-
-const VEST_PIVOT_X_FRAC = 0.5;
-const VEST_PIVOT_Y_FRAC = 0.22;
-/** Больше значение — мельче жилет на экране (доля ширины плеч в PNG). */
-const VEST_ART_SHOULDER_WIDTH_FRAC = 0.5;
-const VEST_SCALE_MIN = 0.15;
-const VEST_SCALE_MAX = 2.85;
-const VEST_ANGLE_FUDGE = 0;
-/** Жилет в PNG перевёрнут относительно плеч — доп. 180° в плоскости тела. */
-const VEST_SPRITE_ROTATION_FIX = Math.PI;
-const VEST_GLOBAL_SCALE = 0.96;
-/** Сдвиг якоря жилета вниз по экрану, доля ширины плеч. */
-const VEST_ANCHOR_DOWN_MUL = 0.16;
-
-function drawVestSprite(ctx, lm, getScreenPoint, poseKey) {
-    const arm = playerArmorByPoseKey.get(poseKey);
-    const vHits = arm?.vestHits ?? 0;
-    if (vHits >= VEST_HITS_TO_BREAK) return;
-
-    const ls = lm[11];
-    const rs = lm[12];
-    const lh = lm[23];
-    const rh = lm[24];
-    if (!ls || !rs || !lh || !rh) return;
-    const vis = Math.min(ls.visibility ?? 1, rs.visibility ?? 1, lh.visibility ?? 1, rh.visibility ?? 1);
-    if (vis < 0.25) return;
+    const leftRaw = getScreenPoint(lw);
+    const rightRaw = getScreenPoint(rw);
+    leftRaw.visibility = lw.visibility;
+    rightRaw.visibility = rw.visibility;
 
     const p11 = getScreenPoint(ls);
     const p12 = getScreenPoint(rs);
-    const shoulderW = Math.hypot(p12.x - p11.x, p12.y - p11.y);
-    if (shoulderW < 14) return;
+    const shoulderWRaw = Math.hypot(p12.x - p11.x, p12.y - p11.y);
+    if (shoulderWRaw < GAME_CFG.shoulderMinPx) {
+        bucketByPoseKey.delete(poseKey);
+        return null;
+    }
+    const shoulderW = smoothShoulderWidth(poseKey, shoulderWRaw);
 
-    const ang = Math.atan2(p12.y - p11.y, p12.x - p11.x);
-    const midS = { x: (p11.x + p12.x) * 0.5, y: (p11.y + p12.y) * 0.5 };
-    midS.y += shoulderW * VEST_ANCHOR_DOWN_MUL;
+    let state = wristSmoothByPoseKey.get(poseKey);
+    if (!state) state = { left: null, right: null };
 
-    const img = vestSprites[vHits];
-    if (!img.complete || img.naturalWidth === 0) return;
+    state.left = smoothWristPoint(state.left, leftRaw);
+    state.right = smoothWristPoint(state.right, rightRaw);
+    wristSmoothByPoseKey.set(poseKey, state);
 
-    const iw = img.naturalWidth;
-    const ih = img.naturalHeight;
-    const pivotX = iw * VEST_PIVOT_X_FRAC;
-    const pivotY = ih * VEST_PIVOT_Y_FRAC;
-    let scale = (shoulderW / (iw * VEST_ART_SHOULDER_WIDTH_FRAC)) * VEST_GLOBAL_SCALE;
-    scale = Math.max(VEST_SCALE_MIN, Math.min(VEST_SCALE_MAX, scale));
-
-    ctx.save();
-    ctx.translate(midS.x, midS.y);
-    ctx.rotate(ang + VEST_ANGLE_FUDGE + VEST_SPRITE_ROTATION_FIX);
-    ctx.scale(scale, scale);
-    ctx.translate(-pivotX, -pivotY);
-    ctx.drawImage(img, 0, 0);
-    ctx.restore();
+    const bucket = smoothBucketDisplay(
+        poseKey,
+        computeBucket(state.left, state.right, shoulderW, poseKey, performance.now())
+    );
+    bucketByPoseKey.set(poseKey, bucket);
+    return bucket;
 }
 
-/** shoulderW: сглаженная ширина плеч (px). poseKey + hand — отдельное сглаживание кисти. */
-function drawGauntletSprite(ctx, wristLm, indexLm, getScreenPoint, poseKey, hand, shoulderW) {
-    if (!wristLm || !indexLm) return;
-    if ((wristLm.visibility ?? 1) < POSE_HAND_MIN_VISIBILITY) return;
+function updateTrackingDisplay(orderedPersons, activeBuckets) {
+    if (!trackingDisplay) return;
+    const n = orderedPersons.length;
+    const buckets = activeBuckets.length;
 
-    const W = getScreenPoint(wristLm);
-    const I = getScreenPoint(indexLm);
-    const reachRaw = Math.hypot(I.x - W.x, I.y - W.y);
-    if (reachRaw < 8) return;
-
-    const hystPx = Math.max(10, gameLayout.minSide * GAUNTLET_AIM_HYST_MUL);
-    const a = GAUNTLET_OVERLAY_SMOOTH_ALPHA;
-    const mapKey = `${poseKey}|${hand}`;
-    let st = gauntletOverlayByHandKey.get(mapKey);
-    if (!st) {
-        const aimUp0 = I.y - W.y <= 0;
-        st = { wx: W.x, wy: W.y, ix: I.x, iy: I.y, aimUp: aimUp0 };
-        gauntletOverlayByHandKey.set(mapKey, st);
-    } else {
-        st.wx = st.wx * (1 - a) + W.x * a;
-        st.wy = st.wy * (1 - a) + W.y * a;
-        st.ix = st.ix * (1 - a) + I.x * a;
-        st.iy = st.iy * (1 - a) + I.y * a;
+    if (playerModeCount === 1) {
+        trackingDisplay.textContent =
+            buckets >= 1 ? 'Руки отслеживаются · держите ведро' : 'Покажите обе руки в кадре';
+        return;
     }
 
-    const dy = st.iy - st.wy;
-    if (st.aimUp) {
-        if (dy > hystPx) st.aimUp = false;
+    if (n >= 2 && buckets >= 2) {
+        trackingDisplay.textContent = '2 игрока · общий счёт и вода';
+    } else if (n >= 1 && buckets >= 1) {
+        trackingDisplay.textContent = '2 игрока · позовите второго в кадр';
     } else {
-        if (dy < -hystPx) st.aimUp = true;
+        trackingDisplay.textContent = '2 игрока · встаньте в кадр оба';
     }
-    const aimUp = st.aimUp;
-
-    const reach = Math.hypot(st.ix - st.wx, st.iy - st.wy);
-    if (reach < 8) return;
-
-    const key =
-        hand === 'left' ? (aimUp ? 'lu' : 'ld') : aimUp ? 'ru' : 'rd';
-
-    const arm = getOrCreatePlayerArmor(poseKey);
-    const gh = hand === 'right' ? arm.gloveLHits : arm.gloveRHits;
-    if (gh >= GLOVE_HITS_TO_BREAK) return;
-
-    const img = gauntletSpritesByKey[key][gh];
-    if (!img.complete || img.naturalWidth === 0) return;
-
-    const iw = img.naturalWidth;
-    const ih = img.naturalHeight;
-    const pivotX = iw * GAUNTLET_PIVOT_X_FRAC;
-    const pivotY = ih * GAUNTLET_PIVOT_Y_FRAC;
-    const sw = Math.max(40, shoulderW);
-    const bodyRatio = Math.max(GAUNTLET_BODY_RATIO_FLOOR, sw / GAUNTLET_SHOULDER_REF_PX);
-    const bodyRatioCap = Math.min(GAUNTLET_DISTANCE_SCALE_MAX, bodyRatio);
-    const distanceMul = Math.pow(bodyRatioCap, GAUNTLET_DISTANCE_EXP);
-    const reachEff = Math.min(reach, sw * GAUNTLET_MAX_REACH_OVER_SHOULDER);
-    let scale = reachEff * GAUNTLET_SCALE_PER_REACH * distanceMul;
-    scale = Math.min(scale, sw * GAUNTLET_SCALE_CAP_PER_SHOULDER_PX);
-    scale = Math.max(GAUNTLET_SCALE_MIN, Math.min(GAUNTLET_SCALE_MAX, scale));
-
-    const angAim = Math.atan2(st.iy - st.wy, st.ix - st.wx);
-    const angImgForward = aimUp ? GAUNTLET_ART_FORWARD_UP : GAUNTLET_ART_FORWARD_DOWN;
-    const rotation = angAim - angImgForward + GAUNTLET_ANGLE_FUDGE;
-
-    ctx.save();
-    ctx.translate(st.wx, st.wy);
-    ctx.rotate(rotation);
-    ctx.scale(scale, scale);
-    ctx.translate(-pivotX, -pivotY);
-    ctx.drawImage(img, 0, 0);
-    ctx.restore();
 }
 
-let currentPoseResults = null;
+function drawWristMarkers(ctx, bucket, playerColor = '#00f3ff') {
+    if (!bucket) return;
+    for (const pt of [bucket.leftWrist, bucket.rightWrist]) {
+        ctx.fillStyle = playerColor;
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, 10, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+    }
+}
 
 let perfFrameSumMs = 0;
 let perfFrameCount = 0;
@@ -2171,6 +1482,7 @@ function gameLoop(nowTime) {
     if (dt > 3) dt = 3;
     if (dt < 0) dt = 0;
     lastFrameTime = nowTime;
+    gameTime += dt;
 
     const startTimeMs = performance.now();
 
@@ -2205,7 +1517,7 @@ function gameLoop(nowTime) {
         video.videoHeight * ratio
     );
 
-    canvasCtx.fillStyle = 'rgba(0,0,0,0.58)';
+    canvasCtx.fillStyle = 'rgba(0,0,0,0.52)';
     canvasCtx.fillRect(0, 0, canvasElement.width, canvasElement.height);
 
     function getScreenPoint(landmark) {
@@ -2215,187 +1527,115 @@ function gameLoop(nowTime) {
         };
     }
 
-    const smoothedLmByPoseKey = new Map();
     let orderedPersons = [];
+    const activeBuckets = [];
 
     if (currentPoseResults?.landmarks) {
         orderedPersons = bindStablePoseKeys(getOrderedPersons(currentPoseResults), getScreenPoint);
-        const nowPoseMs = performance.now();
-        const activePoseKeys = new Set(orderedPersons.map((p) => p.key));
-        prunePoseSmoothState(activePoseKeys, nowPoseMs);
-        pruneHelmetPoseOverlayState(activePoseKeys);
-        pruneGauntletOverlayState(activePoseKeys);
-        prunePlayerArmorState(activePoseKeys);
-
-        for (const { lm: rawLm, key: poseKey } of orderedPersons) {
-            smoothedLmByPoseKey.set(poseKey, smoothPoseLandmarks(poseKey, rawLm, nowPoseMs));
+        const activeKeys = new Set(orderedPersons.map((p) => p.key));
+        for (const k of [...bucketByPoseKey.keys()]) {
+            if (!activeKeys.has(k)) bucketByPoseKey.delete(k);
+        }
+        for (const k of [...wristSmoothByPoseKey.keys()]) {
+            if (!activeKeys.has(k)) wristSmoothByPoseKey.delete(k);
+        }
+        for (const k of [...shoulderWidthByPoseKey.keys()]) {
+            if (!activeKeys.has(k)) shoulderWidthByPoseKey.delete(k);
+        }
+        for (const k of [...bucketDisplayByPoseKey.keys()]) {
+            if (!activeKeys.has(k)) bucketDisplayByPoseKey.delete(k);
         }
 
-        for (const { key: poseKey } of orderedPersons) {
-            const landmarks = smoothedLmByPoseKey.get(poseKey);
-            tickHelmetOverlayFromLm(poseKey, landmarks, getScreenPoint);
+        for (const { lm, key } of orderedPersons) {
+            const bucket = updateHandsFromPose(lm, getScreenPoint, key);
+            if (bucket) activeBuckets.push(bucket);
         }
-
-        for (const { key: poseKey } of orderedPersons) {
-            const landmarks = smoothedLmByPoseKey.get(poseKey);
-            if (DRAW_POSE_SKELETON_LINES) {
-                canvasCtx.strokeStyle = 'rgba(0, 243, 255, 0.78)';
-                canvasCtx.lineWidth = 5;
-                canvasCtx.shadowColor = 'rgba(0, 243, 255, 0.9)';
-                canvasCtx.shadowBlur = 12;
-
-                for (const connection of POSE_CONNECTIONS) {
-                    if (shouldSkipPoseLimbConnection(connection)) continue;
-                    const a = getScreenPoint(landmarks[connection.start]);
-                    const b = getScreenPoint(landmarks[connection.end]);
-                    canvasCtx.beginPath();
-                    canvasCtx.moveTo(a.x, a.y);
-                    canvasCtx.lineTo(b.x, b.y);
-                    canvasCtx.stroke();
-                }
-                canvasCtx.shadowBlur = 0;
-            }
-
-            drawVestSprite(canvasCtx, landmarks, getScreenPoint, poseKey);
-            drawHelmetSprite(canvasCtx, landmarks, getScreenPoint, poseKey);
-            const p11g = getScreenPoint(landmarks[11]);
-            const p12g = getScreenPoint(landmarks[12]);
-            const shoulderWGauntlet = Math.hypot(p12g.x - p11g.x, p12g.y - p11g.y);
-            const shoulderSm = updateGauntletShoulderSmoothed(poseKey, shoulderWGauntlet);
-            drawGauntletSprite(
-                canvasCtx,
-                landmarks[15],
-                landmarks[19],
-                getScreenPoint,
-                poseKey,
-                'right',
-                shoulderSm
-            );
-            drawGauntletSprite(
-                canvasCtx,
-                landmarks[16],
-                landmarks[20],
-                getScreenPoint,
-                poseKey,
-                'left',
-                shoulderSm
-            );
-        }
+    } else {
+        bucketByPoseKey.clear();
     }
 
-    if (playersDisplay) {
-        const n = orderedPersons.length;
-        if (playerModeCount === 1) {
-            playersDisplay.textContent =
-                n >= 1 ? 'Режим: 1 игрок' : 'Режим: 1 игрок · встаньте в кадр';
-        } else {
-            playersDisplay.textContent =
-                n >= 2
-                    ? 'Режим: 2 игрока · общий счёт'
-                    : n === 1
-                      ? 'Режим: 2 игрока · позовите второго'
-                      : 'Режим: 2 игрока · встаньте в кадр';
-        }
+    updateTrackingDisplay(orderedPersons, activeBuckets);
+    updateMugTimerHud(activeBuckets, nowTime);
+
+    drawCeiling(canvasCtx);
+    drawLeakSpots(canvasCtx);
+    drawWater(canvasCtx);
+
+    updateGrowingSpots(dt);
+
+    if (nowTime - lastSpawnTime >= nextSpawnDelay) {
+        tryStartDropGrowth('normal');
+        lastSpawnTime = nowTime;
+        nextSpawnDelay = randSpawnDelay();
+        const difficulty = Math.min(0.25, score * 0.006);
+        nextSpawnDelay *= 1 - difficulty;
     }
 
-    const keyedHands = buildKeyedHandsFromPose(orderedPersons);
-    const fireNow = performance.now();
-
-    for (const { key, landmarks } of keyedHands) {
-        const wrist = getScreenPoint(landmarks[0]);
-        const tip = getScreenPoint(landmarks[8]);
-        let dx = tip.x - wrist.x;
-        let dy = tip.y - wrist.y;
-        const span = Math.hypot(dx, dy);
-        if (span < GAME_CFG.aimMinSpanPx) continue;
-        dx /= span;
-        dy /= span;
-
-        if (dy > -GAME_CFG.aimUpMinAbsDy) continue;
-
-        const pk = poseKeyFromHandKey(key);
-        const armFire = playerArmorByPoseKey.get(pk);
-        const gHits = key.startsWith('PoseLeft') ? (armFire?.gloveLHits ?? 0) : (armFire?.gloveRHits ?? 0);
-        if (gHits >= GLOVE_HITS_TO_BREAK) continue;
-
-        const last = lastFireByHandKey.get(key) ?? 0;
-        if (fireNow - last < GAME_CFG.fireCooldownMs) continue;
-
-        const pid = playerIndexFromHandKey(key);
-        const color = pid === 0 ? '#00f3ff' : '#ff00ea';
-
-        const ox = wrist.x + dx * 44;
-        const oy = wrist.y + dy * 44;
-        projectiles.push(
-            new Projectile(ox, oy, dx * GAME_CFG.projectileSpeed, dy * GAME_CFG.projectileSpeed, color)
-        );
-        lastFireByHandKey.set(key, fireNow);
-        playShootSound();
-
-        canvasCtx.save();
-        canvasCtx.strokeStyle = color;
-        canvasCtx.globalAlpha = 0.38;
-        canvasCtx.lineWidth = 3;
-        canvasCtx.beginPath();
-        canvasCtx.moveTo(wrist.x, wrist.y);
-        canvasCtx.lineTo(wrist.x + dx * 130, wrist.y + dy * 130);
-        canvasCtx.stroke();
-        canvasCtx.restore();
+    if (nowTime - lastRedSpawnTime >= nextRedSpawnDelay) {
+        tryStartDropGrowth('red');
+        lastRedSpawnTime = nowTime;
+        nextRedSpawnDelay = randRedSpawnDelay();
     }
 
-    const now = Date.now();
-    if (now - lastSpawnTime >= GAME_CFG.spawnIntervalMs) {
-        spawnInvaderWave();
-        lastSpawnTime = now;
-    }
+    const floorY = gameLayout.h - waterLevel * gameLayout.h;
 
-    const nowPerf = performance.now();
-    updateInvaderFormation();
-    tryInvaderDive(nowPerf);
+    for (let i = drops.length - 1; i >= 0; i--) {
+        const drop = drops[i];
+        drop.y += drop.vy * dt;
 
-    for (let i = targets.length - 1; i >= 0; i--) {
-        const t = targets[i];
-        t.update(dt);
-        if (!t.destroyed && orderedPersons.length) {
-            tryInvaderPlayerArmorCollision(t, orderedPersons, smoothedLmByPoseKey, getScreenPoint);
-        }
-        t.draw(canvasCtx);
-        if (!t.destroyed && t.y > gameLayout.h + 120) {
-            targets.splice(i, 1);
-        } else if (t.destroyed) {
-            targets.splice(i, 1);
-        }
-    }
-
-    for (let i = projectiles.length - 1; i >= 0; i--) {
-        const pr = projectiles[i];
-        pr.update(dt);
-
-        if (!pr.dead) {
-            for (const t of targets) {
-                if (t.destroyed) continue;
-                if (circleHit(pr.x, pr.y, pr.r, t.x, t.y, t.hitR)) {
-                    pr.dead = true;
-                    t.armor -= 1;
-                    t.hitFlash = 1;
-                    if (t.armor <= 0) {
-                        t.destroyed = true;
-                        score += t.scoreValue ?? GAME_CFG.scoreTarget;
-                        scoreDisplay.innerText = `Score: ${score}`;
-                        playHitSound();
-                        particles.push(new HitBurst(t.x, t.y, t.color));
-                        for (let p = 0; p < 18; p++) particles.push(new Particle(t.x, t.y, t.color, 'dot'));
-                        for (let p = 0; p < 12; p++) particles.push(new Particle(t.x, t.y, t.color, 'spark'));
-                    } else {
-                        for (let p = 0; p < 4; p++) particles.push(new Particle(t.x, t.y, t.color, 'spark'));
-                    }
-                    break;
-                }
+        let catcher = null;
+        for (const bucket of activeBuckets) {
+            if (dropCaughtByBucket(drop, bucket)) {
+                catcher = bucket;
+                break;
             }
         }
 
-        if (!pr.dead) pr.draw(canvasCtx);
-        if (pr.dead) projectiles.splice(i, 1);
+        if (catcher) {
+            drop.dead = true;
+            if (drop.kind === 'red') {
+                applyMugMode(catcher.poseKey, nowTime);
+                spawnSplash(drop.x, drop.y, '#b87333');
+            } else {
+                score += 1;
+                updateHud();
+                spawnSplash(drop.x, drop.y, '#7ec8ff');
+                playCatchSound();
+            }
+            drops.splice(i, 1);
+            continue;
+        }
+
+        if (drop.y + drop.r >= floorY) {
+            drop.dead = true;
+            if (drop.kind !== 'red') {
+                waterLevel = Math.min(1, waterLevel + GAME_CFG.waterRisePerMiss);
+                updateHud();
+                playSplashSound();
+            }
+            spawnSplash(drop.x, floorY, drop.kind === 'red' ? '#9a5c2e' : '#4a9eff');
+            drops.splice(i, 1);
+
+            if (waterLevel >= GAME_CFG.waterGameOverFrac) {
+                triggerGameOver();
+            }
+            continue;
+        }
+
+        if (drop.y > gameLayout.h + drop.r * 2) {
+            drops.splice(i, 1);
+        }
+    }
+
+    for (const drop of drops) {
+        drawDrop(canvasCtx, drop);
+    }
+
+    for (const bucket of activeBuckets) {
+        const pi = playerIndexFromPoseKey(bucket.poseKey);
+        const color = PLAYER_COLORS[pi] ?? PLAYER_COLORS[0];
+        drawBucket(canvasCtx, bucket);
+        drawWristMarkers(canvasCtx, bucket, color);
     }
 
     for (let i = particles.length - 1; i >= 0; i--) {
@@ -2419,12 +1659,6 @@ function gameLoop(nowTime) {
         }
     }
 
-    if (isPlaying && orderedPersons.length > 0) {
-        if (orderedPersons.every((p) => playerLoadoutFullyDestroyed(p.key))) {
-            triggerGameOver();
-        }
-    }
-
     if (isPlaying) requestAnimationFrame(gameLoop);
 }
 
@@ -2444,7 +1678,7 @@ function showStartError(e) {
         /Timeout starting video source|metadata timeout/i.test(msg)
     ) {
         hint =
-            'Камера не успела запуститься. Отключите режим эмуляции устройства в DevTools (или выберите реальное устройство с камерой), закройте другие программы, использующие камеру, и обновите страницу.';
+            'Камера не успела запуститься. Закройте другие программы, использующие камеру, и обновите страницу.';
     }
     loadingElement.innerHTML = '';
     const wrap = document.createElement('div');
@@ -2473,8 +1707,7 @@ function showStartError(e) {
 async function start() {
     try {
         await setupWebcam();
-        await initializeModels();
-        await preloadCharacterSprites();
+        await Promise.all([initializeModels(), preloadSprites()]);
     } catch (e) {
         showStartError(e);
     }
