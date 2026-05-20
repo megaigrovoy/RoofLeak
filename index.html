@@ -44,6 +44,19 @@
               </label>
             </div>
           </div>
+          <div id="ui-players-picker" class="ui-lang-picker" role="radiogroup" aria-labelledby="menu-player-label">
+            <div id="menu-player-label" class="ui-lang-label">Игроки</div>
+            <div class="ui-lang-segment">
+              <label class="ui-lang-pill">
+                <input type="radio" name="roof-leak-players" id="opt-players-1" value="1" />
+                <span id="opt-players-1-label">1</span>
+              </label>
+              <label class="ui-lang-pill">
+                <input type="radio" name="roof-leak-players" id="opt-players-2" value="2" checked />
+                <span id="opt-players-2-label">2</span>
+              </label>
+            </div>
+          </div>
         </div>
         <div id="hud-game" class="hud-game is-hidden">
           <div id="game-over-overlay" class="game-over-overlay is-hidden" aria-live="assertive">GAME OVER</div>
@@ -75,20 +88,6 @@
           <div class="menu-panel">
             <div class="menu-hero menu-hero-roof-leak">
               <img id="menu-hero-image" class="menu-hero-image" src="" alt="Roof Leak" width="1344" height="768" decoding="async" />
-            </div>
-            <div class="menu-player-row menu-player-row-prominent" role="radiogroup" aria-labelledby="menu-player-label">
-              <div id="menu-player-label" class="menu-player-label">Игроков на камере</div>
-              <div class="menu-player-segment">
-                <label class="menu-player-pill">
-                  <input type="radio" name="roof-leak-players" id="opt-players-1" value="1" />
-                  <span id="opt-players-1-label">Один</span>
-                </label>
-                <label class="menu-player-pill">
-                  <input type="radio" name="roof-leak-players" id="opt-players-2" value="2" checked />
-                  <span id="opt-players-2-label">Два</span>
-                </label>
-              </div>
-              <p id="menu-player-hint" class="menu-player-hint">В режиме «Два» у каждого своё ведро, общий счёт и уровень воды.</p>
             </div>
             <div class="menu-cta">
               <button type="button" id="btn-start" class="btn-start">Играть</button>
@@ -144,7 +143,6 @@
           </div>
         </div>
         <div id="loading" class="visible">
-          <div id="loading-logo" aria-hidden="true">⌖</div>
           <div id="loading-text">Загрузка моделей…</div>
           <div id="progress-container">
             <div id="progress-bar"></div>

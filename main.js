@@ -12,10 +12,9 @@ const I18N = {
     ru: {
         pageTitle: 'Протечка крыши',
         heroAlt: 'Roof Leak — The Drop Chase',
-        playersLabel: 'Игроков на камере',
-        playersOne: 'Один',
-        playersTwo: 'Два',
-        playersHint: 'В режиме «Два» у каждого своё ведро, общий счёт и уровень воды.',
+        playersLabel: 'Игроки',
+        playersOne: '1',
+        playersTwo: '2',
         langLabel: 'Язык',
         langRu: 'RU',
         langEn: 'EN',
@@ -54,10 +53,9 @@ const I18N = {
     en: {
         pageTitle: 'Roof Leak',
         heroAlt: 'Roof Leak — The Drop Chase',
-        playersLabel: 'Players on camera',
-        playersOne: 'One',
-        playersTwo: 'Two',
-        playersHint: 'In Two-player mode each player gets a bucket; score and water level are shared.',
+        playersLabel: 'Players',
+        playersOne: '1',
+        playersTwo: '2',
         langLabel: 'Language',
         langRu: 'RU',
         langEn: 'EN',
@@ -670,7 +668,6 @@ function applyUiLanguage() {
     setText('menu-player-label', 'playersLabel');
     setText('opt-players-1-label', 'playersOne');
     setText('opt-players-2-label', 'playersTwo');
-    setText('menu-player-hint', 'playersHint');
     setText('menu-lang-label', 'langLabel');
     setText('opt-lang-ru-label', 'langRu');
     setText('opt-lang-en-label', 'langEn');
@@ -877,7 +874,7 @@ mainMenu.addEventListener(
         if (e.target?.closest?.('#btn-start')) return;
         if (e.target?.closest?.('#btn-fullscreen')) return;
         if (e.target?.closest?.('#ui-lang-picker')) return;
-        if (e.target?.closest?.('.menu-player-row')) return;
+        if (e.target?.closest?.('#ui-players-picker')) return;
         if (e.target?.closest?.('.menu-options')) return;
         playMenuMusic();
     },
@@ -1319,20 +1316,6 @@ function spawnMenuDrop(w, h, spreadY = false) {
     });
 }
 
-function drawMenuDropThread(ctx, x, y, r) {
-    const tipY = y - r * 1.38;
-    const threadGrad = ctx.createLinearGradient(x, tipY - r * 0.8, x, tipY + r * 0.1);
-    threadGrad.addColorStop(0, 'rgba(150, 205, 255, 0.05)');
-    threadGrad.addColorStop(1, 'rgba(120, 200, 255, 0.32)');
-    ctx.strokeStyle = threadGrad;
-    ctx.lineCap = 'round';
-    ctx.lineWidth = Math.max(1, r * 0.12);
-    ctx.beginPath();
-    ctx.moveTo(x, tipY - r * 0.75);
-    ctx.lineTo(x, tipY + r * 0.08);
-    ctx.stroke();
-}
-
 function tickMenuDrops(dt) {
     if (!menuDropsCtx || !mainMenu) return;
     const w = mainMenu.clientWidth;
@@ -1351,7 +1334,6 @@ function tickMenuDrops(dt) {
 
     menuDropsCtx.clearRect(0, 0, w, h);
     for (const d of menuFallingDrops) {
-        drawMenuDropThread(menuDropsCtx, d.x, d.y, d.r);
         drawDropBulb(menuDropsCtx, d.x, d.y, d.r, d.alpha, 'normal');
     }
 }
