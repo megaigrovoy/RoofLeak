@@ -71,16 +71,11 @@
           <button type="button" id="btn-back-menu" class="btn-menu btn-back-menu">Меню</button>
         </div>
         <div id="main-menu" class="menu-overlay is-hidden">
+          <canvas id="menu-drops-canvas" class="menu-drops-canvas" aria-hidden="true"></canvas>
           <div class="menu-panel">
-            <div class="menu-hero menu-hero-roof-leak" aria-hidden="true">
-              <div class="menu-hero-glow"></div>
-              <div id="menu-hero-title" class="menu-hero-title">ПРОТЕЧКА</div>
-              <div id="menu-hero-sub" class="menu-hero-sub">трекинг рук · ведро · лови капли</div>
+            <div class="menu-hero menu-hero-roof-leak">
+              <img id="menu-hero-image" class="menu-hero-image" src="" alt="Roof Leak" width="1344" height="768" decoding="async" />
             </div>
-            <h2 id="menu-heading" class="menu-heading">Ловите капли с протекающей крыши</h2>
-            <p id="menu-hint" class="menu-hint">
-              Разведите руки перед камерой — между ними появится ведро. Капли падают сверху в случайных местах. Поймайте их в ведро, иначе вода поднимается с пола. Если уровень воды превысит 50% экрана — игра окончена.
-            </p>
             <div class="menu-player-row menu-player-row-prominent" role="radiogroup" aria-labelledby="menu-player-label">
               <div id="menu-player-label" class="menu-player-label">Игроков на камере</div>
               <div class="menu-player-segment">

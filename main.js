@@ -11,11 +11,7 @@ const STORAGE_LANG = 'roof-leak-lang';
 const I18N = {
     ru: {
         pageTitle: 'Протечка крыши',
-        heroTitle: 'ПРОТЕЧКА',
-        heroSub: 'трекинг рук · ведро · лови капли',
-        menuHeading: 'Ловите капли с протекающей крыши',
-        menuHint:
-            'Разведите руки перед камерой — между ними появится ведро. Капли падают сверху в случайных местах. Поймайте их в ведро, иначе вода поднимается с пола. Если уровень воды превысит 50% экрана — игра окончена.',
+        heroAlt: 'Roof Leak — The Drop Chase',
         playersLabel: 'Игроков на камере',
         playersOne: 'Один',
         playersTwo: 'Два',
@@ -57,11 +53,7 @@ const I18N = {
     },
     en: {
         pageTitle: 'Roof Leak',
-        heroTitle: 'ROOF LEAK',
-        heroSub: 'hand tracking · bucket · catch drops',
-        menuHeading: 'Catch drops from the leaking roof',
-        menuHint:
-            'Spread your hands in front of the camera — a bucket appears between your wrists. Drops fall from random spots. Catch them in the bucket, or the water level on the floor will rise. If the water exceeds 50% of the screen — game over.',
+        heroAlt: 'Roof Leak — The Drop Chase',
         playersLabel: 'Players on camera',
         playersOne: 'One',
         playersTwo: 'Two',
@@ -141,6 +133,7 @@ const PLAYER_COLORS = ['#00f3ff', '#ff00ea'];
 
 const BUCKET_IMG_URL = new URL('./src/assets/img/bucket.png', import.meta.url).href;
 const CUP_IMG_URL = new URL('./src/assets/img/cup.png', import.meta.url).href;
+const MENU_HERO_IMG_URL = new URL('./src/assets/img/menu-hero.png', import.meta.url).href;
 const BUCKET_PIVOT_X_FRAC = 0.5;
 /** Точка на ободе ведра в PNG (чуть ниже ручки) */
 const BUCKET_PIVOT_Y_FRAC = 0.16;
@@ -674,10 +667,6 @@ function applyUiLanguage() {
         if (el) el.textContent = t(key);
     };
 
-    setText('menu-hero-title', 'heroTitle');
-    setText('menu-hero-sub', 'heroSub');
-    setText('menu-heading', 'menuHeading');
-    setText('menu-hint', 'menuHint');
     setText('menu-player-label', 'playersLabel');
     setText('opt-players-1-label', 'playersOne');
     setText('opt-players-2-label', 'playersTwo');
@@ -693,6 +682,12 @@ function applyUiLanguage() {
     if (btnStart) btnStart.textContent = t('play');
     if (btnBackMenu) btnBackMenu.textContent = t('menu');
     if (loadingText) loadingText.textContent = t('loadingModels');
+
+    const menuHeroImage = document.getElementById('menu-hero-image');
+    if (menuHeroImage) {
+        menuHeroImage.src = MENU_HERO_IMG_URL;
+        menuHeroImage.alt = t('heroAlt');
+    }
 
     const menuOptions = document.querySelector('.menu-options');
     if (menuOptions) menuOptions.setAttribute('aria-label', t('optionsAria'));
@@ -787,6 +782,7 @@ function showMainMenu() {
     canvasElement.style.visibility = 'hidden';
     void video.pause();
     playMenuMusic();
+    startMenuDrops();
 }
 
 function startGame() {
@@ -805,6 +801,7 @@ function startGame() {
     resetWristSmoothing();
     initLeakSpots();
     updateHud();
+    stopMenuDrops();
     mainMenu.classList.add('is-hidden');
     hudGame.classList.remove('is-hidden');
     canvasElement.style.visibility = '';
@@ -1071,7 +1068,9 @@ function scheduleResizeCanvas() {
     resizeCanvasDebounce = setTimeout(() => {
         resizeCanvasDebounce = 0;
         resizeCanvas();
+        if (menuDropsAnimating) resizeMenuDropsCanvas();
     }, 110);
+    if (menuDropsAnimating) resizeMenuDropsCanvas();
 }
 
 window.addEventListener('resize', scheduleResizeCanvas);
@@ -1281,6 +1280,115 @@ function drawDropBulb(ctx, x, y, r, alpha = 1, variant = 'normal') {
     ctx.fill();
 
     ctx.restore();
+}
+
+const menuDropsCanvas = document.getElementById('menu-drops-canvas');
+let menuDropsCtx = null;
+let menuDropsAnimating = false;
+let menuDropsRaf = 0;
+let menuDropsLastTs = 0;
+let menuDropsLastW = 0;
+let menuDropsLastH = 0;
+const menuFallingDrops = [];
+
+function resizeMenuDropsCanvas() {
+    if (!menuDropsCanvas || !mainMenu) return;
+    const w = mainMenu.clientWidth;
+    const h = mainMenu.clientHeight;
+    if (w <= 0 || h <= 0) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    menuDropsCanvas.width = Math.floor(w * dpr);
+    menuDropsCanvas.height = Math.floor(h * dpr);
+    menuDropsCanvas.style.width = `${w}px`;
+    menuDropsCanvas.style.height = `${h}px`;
+    menuDropsCtx = menuDropsCanvas.getContext('2d');
+    menuDropsCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    menuDropsLastW = w;
+    menuDropsLastH = h;
+}
+
+function spawnMenuDrop(w, h, spreadY = false) {
+    const minSide = Math.min(w, h);
+    const r = minSide * (0.016 + Math.random() * 0.014);
+    menuFallingDrops.push({
+        x: Math.random() * w,
+        y: spreadY ? Math.random() * h : -r * 4 - Math.random() * h * 0.2,
+        r,
+        vy: minSide * (0.0038 + Math.random() * 0.0028),
+        alpha: 0.62 + Math.random() * 0.28
+    });
+}
+
+function drawMenuDropThread(ctx, x, y, r) {
+    const tipY = y - r * 1.38;
+    const threadGrad = ctx.createLinearGradient(x, tipY - r * 0.8, x, tipY + r * 0.1);
+    threadGrad.addColorStop(0, 'rgba(150, 205, 255, 0.05)');
+    threadGrad.addColorStop(1, 'rgba(120, 200, 255, 0.32)');
+    ctx.strokeStyle = threadGrad;
+    ctx.lineCap = 'round';
+    ctx.lineWidth = Math.max(1, r * 0.12);
+    ctx.beginPath();
+    ctx.moveTo(x, tipY - r * 0.75);
+    ctx.lineTo(x, tipY + r * 0.08);
+    ctx.stroke();
+}
+
+function tickMenuDrops(dt) {
+    if (!menuDropsCtx || !mainMenu) return;
+    const w = mainMenu.clientWidth;
+    const h = mainMenu.clientHeight;
+    if (w !== menuDropsLastW || h !== menuDropsLastH) resizeMenuDropsCanvas();
+
+    if (menuFallingDrops.length < 20 && Math.random() < 0.055) {
+        spawnMenuDrop(w, h);
+    }
+
+    for (let i = menuFallingDrops.length - 1; i >= 0; i--) {
+        const d = menuFallingDrops[i];
+        d.y += d.vy * dt;
+        if (d.y - d.r * 2 > h) menuFallingDrops.splice(i, 1);
+    }
+
+    menuDropsCtx.clearRect(0, 0, w, h);
+    for (const d of menuFallingDrops) {
+        drawMenuDropThread(menuDropsCtx, d.x, d.y, d.r);
+        drawDropBulb(menuDropsCtx, d.x, d.y, d.r, d.alpha, 'normal');
+    }
+}
+
+function menuDropsLoop(ts) {
+    if (!menuDropsAnimating) return;
+    if (!menuDropsLastTs) menuDropsLastTs = ts;
+    let dt = (ts - menuDropsLastTs) / (1000 / 60);
+    if (dt > 3) dt = 3;
+    if (dt < 0) dt = 0;
+    menuDropsLastTs = ts;
+    tickMenuDrops(dt);
+    menuDropsRaf = requestAnimationFrame(menuDropsLoop);
+}
+
+function startMenuDrops() {
+    if (!menuDropsCanvas || mainMenu?.classList.contains('is-hidden')) return;
+    stopMenuDrops();
+    resizeMenuDropsCanvas();
+    menuFallingDrops.length = 0;
+    const w = mainMenu.clientWidth;
+    const h = mainMenu.clientHeight;
+    for (let i = 0; i < 10; i++) spawnMenuDrop(w, h, true);
+    menuDropsAnimating = true;
+    menuDropsLastTs = 0;
+    menuDropsRaf = requestAnimationFrame(menuDropsLoop);
+}
+
+function stopMenuDrops() {
+    menuDropsAnimating = false;
+    if (menuDropsRaf) cancelAnimationFrame(menuDropsRaf);
+    menuDropsRaf = 0;
+    menuDropsLastTs = 0;
+    menuFallingDrops.length = 0;
+    if (menuDropsCtx && menuDropsCanvas && mainMenu) {
+        menuDropsCtx.clearRect(0, 0, mainMenu.clientWidth, mainMenu.clientHeight);
+    }
 }
 
 function drawLeakSpots(ctx) {
