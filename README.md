@@ -1,6 +1,16 @@
-# Blasters (Web MediaPipe)
+# Протечка крыши (Roof Leak)
 
-Кооп-игра для двух человек перед одной камерой: трекинг как в **Web-mediapipe**, но вместо ниндзи — **автострельба** из поднятых ладоней по направлению «запястье → кончик указательного».
+Игра перед веб-камерой на **MediaPipe Pose**: разведите руки — между запястьями появится ведро, ловите капли с протекающей крыши.
+
+Режим на **1 или 2 игроков** перед одной камерой.
+
+## Геймплей
+
+- Разведите руки — ведро появляется между запястьями и следует за ними.
+- Капли растут в случайных местах под «протечкой» и падают вниз.
+- Пойманная капля даёт очко; промах поднимает уровень воды на полу.
+- Если вода заполнит **50%** экрана — game over.
+- Иногда падает **ржавая капля**: поймав её, вы на **5 секунд** ловите капли в кружку вместо ведра (без очков; промах ржавой капли воду не поднимает).
 
 ## Запуск
 
@@ -9,26 +19,28 @@ npm install
 npm run dev
 ```
 
-Открыть HTTPS URL из терминала (камера требует безопасный контекст; для локальной сети — см. Vite Network).
+Откройте HTTPS URL из терминала — камера работает только в безопасном контексте. Для локальной сети см. адрес **Network** в выводе Vite.
 
 ## Сборка
 
 ```bash
 npm run build
+npm run preview
 ```
 
-## Связка с GitHub
+## Репозиторий
 
-Локальная копия: `E:\BlagoGames\web-mediapipe 2 - blasters`
+- GitHub: [https://github.com/megaigrovoy/RoofLeak](https://github.com/megaigrovoy/RoofLeak)
+- Локальная копия: `E:\BlagoGames\web-mediapipe 3 - roof leak`
 
 ```bash
-cd "E:\BlagoGames\web-mediapipe 2 - blasters"
-git init
-git branch -M main
-git remote add origin https://github.com/megaigrovoy/Blasters.git
-git add .
-git commit -m "Initial Blasters MVP — coop pose hand blast"
-git push -u origin main
+git clone https://github.com/megaigrovoy/RoofLeak.git
+cd RoofLeak
+npm install
+npm run dev
 ```
 
-Репозиторий должен быть создан на GitHub (пустой). Если уже есть файлы на удалёнке — перед первым push выполните `git pull origin main --rebase`.
+## Стек
+
+- Vite
+- [@mediapipe/tasks-vision](https://www.npmjs.com/package/@mediapipe/tasks-vision) (Pose Landmarker, WASM)
