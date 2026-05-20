@@ -5,12 +5,19 @@ const MEDIAPIPE_TASKS_VISION_WASM_VER = '0.10.34';
 const STORAGE_SFX_OFF = 'roof-leak-sfx-off';
 const STORAGE_MUSIC_OFF = 'roof-leak-music-off';
 const STORAGE_PLAYER_COUNT = 'roof-leak-player-count';
+const STORAGE_VOLUME = 'roof-leak-volume';
+
+const BASE_MENU_MUSIC_VOL = 0.52;
+const BASE_GAME_MUSIC_VOL = 0.46;
+const BASE_SFX_CATCH_VOL = 0.72;
+const BASE_SFX_SPLASH_VOL = 0.68;
 
 const DEBUG_FRAME_PERF =
     typeof location !== 'undefined' && new URLSearchParams(location.search).get('perf') === '1';
 
 let soundEffectsEnabled = true;
 let musicEnabled = true;
+let masterVolume = 1;
 
 function loadPlayerCountPreference() {
     const raw = localStorage.getItem(STORAGE_PLAYER_COUNT);
@@ -72,13 +79,39 @@ function getVesselDisplayHeight(width, isMug) {
     return width * GAME_CFG.bucketHeightMul;
 }
 
+function loadMasterVolumeFromStorage() {
+    const raw = localStorage.getItem(STORAGE_VOLUME);
+    if (raw == null) return 1;
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return 1;
+    return Math.min(1, Math.max(0, n / 100));
+}
+
+function persistMasterVolume() {
+    localStorage.setItem(STORAGE_VOLUME, String(Math.round(masterVolume * 100)));
+}
+
+function applyVolumeToPlayingAudio() {
+    if (menuMusicAudio) menuMusicAudio.volume = BASE_MENU_MUSIC_VOL * masterVolume;
+    if (gameMusicAudio) gameMusicAudio.volume = BASE_GAME_MUSIC_VOL * masterVolume;
+}
+
+function setMasterVolume(next) {
+    masterVolume = Math.min(1, Math.max(0, next));
+    persistMasterVolume();
+    applyVolumeToPlayingAudio();
+    updateVolumeUi();
+}
+
 function loadPersistedSettings() {
     soundEffectsEnabled = localStorage.getItem(STORAGE_SFX_OFF) !== '1';
     musicEnabled = localStorage.getItem(STORAGE_MUSIC_OFF) !== '1';
+    masterVolume = loadMasterVolumeFromStorage();
     const sfxCb = document.getElementById('opt-sound-off');
     const musicCb = document.getElementById('opt-music-off');
     if (sfxCb) sfxCb.checked = !soundEffectsEnabled;
     if (musicCb) musicCb.checked = !musicEnabled;
+    updateVolumeUi();
 }
 
 const SFX_CATCH_URL = new URL('./src/assets/sounds/drops/Water Drop In Bucket.mp3', import.meta.url).href;
@@ -141,13 +174,14 @@ function playDecodedSfx(ctx, buffer, volume) {
 
 function playOneShotSfx(url, volume) {
     if (!soundEffectsEnabled || !url) return;
+    const vol = volume * masterVolume;
     const ctx = window.__roofLeakAudioCtx || getOrCreateSfxContext();
     const ready = ctx && sfxAudioBufferByUrl.get(url);
     if (ctx && ready) {
         try {
-            playDecodedSfx(ctx, ready, volume);
+            playDecodedSfx(ctx, ready, vol);
         } catch (_) {
-            fallbackHtmlOneShot(url, volume);
+            fallbackHtmlOneShot(url, vol);
         }
         return;
     }
@@ -156,15 +190,15 @@ function playOneShotSfx(url, volume) {
             .then((buf) => {
                 if (!soundEffectsEnabled) return;
                 try {
-                    playDecodedSfx(ctx, buf, volume);
+                    playDecodedSfx(ctx, buf, vol);
                 } catch (_) {
-                    fallbackHtmlOneShot(url, volume);
+                    fallbackHtmlOneShot(url, vol);
                 }
             })
-            .catch(() => fallbackHtmlOneShot(url, volume));
+            .catch(() => fallbackHtmlOneShot(url, vol));
         return;
     }
-    fallbackHtmlOneShot(url, volume);
+    fallbackHtmlOneShot(url, vol);
 }
 
 function fallbackHtmlOneShot(url, volume) {
@@ -265,8 +299,8 @@ function getMenuMusicAudio() {
     if (!menuMusicAudio) {
         menuMusicAudio = new Audio(MENU_MUSIC_URL);
         menuMusicAudio.loop = true;
-        menuMusicAudio.volume = 0.52;
     }
+    menuMusicAudio.volume = BASE_MENU_MUSIC_VOL * masterVolume;
     return menuMusicAudio;
 }
 
@@ -303,7 +337,7 @@ function playGameMusicTrackAt(index) {
     gameMusicPlaylistIndex = ((index % gameMusicPlaylist.length) + gameMusicPlaylist.length) % gameMusicPlaylist.length;
     const url = gameMusicPlaylist[gameMusicPlaylistIndex];
     const a = new Audio(url);
-    a.volume = 0.46;
+    a.volume = BASE_GAME_MUSIC_VOL * masterVolume;
     gameMusicOnEnded = () => {
         gameMusicPlaylistIndex = (gameMusicPlaylistIndex + 1) % gameMusicPlaylist.length;
         playGameMusicTrackAt(gameMusicPlaylistIndex);
@@ -323,11 +357,11 @@ function startGameMusicPlaylist() {
 }
 
 function playCatchSound() {
-    playOneShotSfx(SFX_CATCH_URL, 0.72);
+    playOneShotSfx(SFX_CATCH_URL, BASE_SFX_CATCH_VOL);
 }
 
 function playSplashSound() {
-    playOneShotSfx(SFX_SPLASH_URL, 0.68);
+    playOneShotSfx(SFX_SPLASH_URL, BASE_SFX_SPLASH_VOL);
 }
 
 const video = document.getElementById('webcam');
@@ -675,6 +709,23 @@ mainMenu.addEventListener(
 
 const optSoundOff = document.getElementById('opt-sound-off');
 const optMusicOff = document.getElementById('opt-music-off');
+const optVolume = document.getElementById('opt-volume');
+const optVolumeValue = document.getElementById('opt-volume-value');
+
+function updateVolumeUi() {
+    const pct = Math.round(masterVolume * 100);
+    if (optVolume) {
+        optVolume.value = String(pct);
+        optVolume.setAttribute('aria-valuenow', String(pct));
+    }
+    if (optVolumeValue) optVolumeValue.textContent = `${pct}%`;
+}
+
+if (optVolume) {
+    optVolume.addEventListener('input', () => {
+        setMasterVolume(Number(optVolume.value) / 100);
+    });
+}
 if (optSoundOff) {
     optSoundOff.addEventListener('change', () => {
         soundEffectsEnabled = !optSoundOff.checked;

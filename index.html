@@ -85,6 +85,24 @@
             </div>
             <div class="menu-options" role="group" aria-label="Опции">
               <div class="menu-options-title">Звук и музыка</div>
+              <div class="menu-volume-row">
+                <label for="opt-volume" class="menu-volume-label">
+                  <span class="menu-volume-title">Громкость</span>
+                  <span id="opt-volume-value" class="menu-volume-value">100%</span>
+                </label>
+                <input
+                  type="range"
+                  id="opt-volume"
+                  class="menu-volume-slider"
+                  min="0"
+                  max="100"
+                  step="1"
+                  value="100"
+                  aria-valuemin="0"
+                  aria-valuemax="100"
+                  aria-valuenow="100"
+                />
+              </div>
               <label class="menu-option-toggle">
                 <input type="checkbox" id="opt-sound-off" class="menu-option-input" aria-label="Отключить звуки в игре" />
                 <span class="menu-option-left">
