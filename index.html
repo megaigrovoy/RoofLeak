@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="ru">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
@@ -25,11 +25,26 @@
       <video id="webcam" autoplay playsinline muted></video>
       <canvas id="game-canvas"></canvas>
       <div id="ui-layer">
-        <button type="button" id="btn-fullscreen" class="btn-fullscreen" aria-label="На весь экран">
-          <span class="btn-fullscreen-on" aria-hidden="true">⛶</span>
-          <span class="btn-fullscreen-off" aria-hidden="true">⛶</span>
-          <span class="btn-fullscreen-label">На весь экран</span>
-        </button>
+        <div class="ui-top-controls">
+          <button type="button" id="btn-fullscreen" class="btn-fullscreen" aria-label="На весь экран">
+            <span class="btn-fullscreen-on" aria-hidden="true">⛶</span>
+            <span class="btn-fullscreen-off" aria-hidden="true">⛶</span>
+            <span class="btn-fullscreen-label">На весь экран</span>
+          </button>
+          <div id="ui-lang-picker" class="ui-lang-picker" role="radiogroup" aria-labelledby="menu-lang-label">
+            <div id="menu-lang-label" class="ui-lang-label">Язык</div>
+            <div class="ui-lang-segment">
+              <label class="ui-lang-pill">
+                <input type="radio" name="roof-leak-lang" id="opt-lang-ru" value="ru" checked />
+                <span id="opt-lang-ru-label">RU</span>
+              </label>
+              <label class="ui-lang-pill">
+                <input type="radio" name="roof-leak-lang" id="opt-lang-en" value="en" />
+                <span id="opt-lang-en-label">EN</span>
+              </label>
+            </div>
+          </div>
+        </div>
         <div id="hud-game" class="hud-game is-hidden">
           <div id="game-over-overlay" class="game-over-overlay is-hidden" aria-live="assertive">GAME OVER</div>
           <h1 id="score-display">Поймано: 0</h1>
@@ -38,7 +53,7 @@
           </div>
           <div id="mug-timers" class="mug-timers is-hidden" aria-live="polite">
             <div id="mug-timer-p0" class="mug-timer-row is-hidden">
-              <span class="mug-timer-name">Игрок 1 · кружка</span>
+              <span class="mug-timer-name">Кружка</span>
               <div class="mug-timer-track"><div class="mug-timer-fill"></div></div>
             </div>
             <div id="mug-timer-p1" class="mug-timer-row is-hidden">
@@ -59,11 +74,11 @@
           <div class="menu-panel">
             <div class="menu-hero menu-hero-roof-leak" aria-hidden="true">
               <div class="menu-hero-glow"></div>
-              <div class="menu-hero-title">ПРОТЕЧКА</div>
-              <div class="menu-hero-sub">трекинг рук · ведро · лови капли</div>
+              <div id="menu-hero-title" class="menu-hero-title">ПРОТЕЧКА</div>
+              <div id="menu-hero-sub" class="menu-hero-sub">трекинг рук · ведро · лови капли</div>
             </div>
-            <h2 class="menu-heading">Ловите капли с протекающей крыши</h2>
-            <p class="menu-hint">
+            <h2 id="menu-heading" class="menu-heading">Ловите капли с протекающей крыши</h2>
+            <p id="menu-hint" class="menu-hint">
               Разведите руки перед камерой — между ними появится ведро. Капли падают сверху в случайных местах. Поймайте их в ведро, иначе вода поднимается с пола. Если уровень воды превысит 50% экрана — игра окончена.
             </p>
             <div class="menu-player-row menu-player-row-prominent" role="radiogroup" aria-labelledby="menu-player-label">
@@ -71,23 +86,23 @@
               <div class="menu-player-segment">
                 <label class="menu-player-pill">
                   <input type="radio" name="roof-leak-players" id="opt-players-1" value="1" />
-                  <span>Один</span>
+                  <span id="opt-players-1-label">Один</span>
                 </label>
                 <label class="menu-player-pill">
                   <input type="radio" name="roof-leak-players" id="opt-players-2" value="2" checked />
-                  <span>Два</span>
+                  <span id="opt-players-2-label">Два</span>
                 </label>
               </div>
-              <p class="menu-player-hint">В режиме «Два» у каждого своё ведро, общий счёт и уровень воды.</p>
+              <p id="menu-player-hint" class="menu-player-hint">В режиме «Два» у каждого своё ведро, общий счёт и уровень воды.</p>
             </div>
             <div class="menu-cta">
               <button type="button" id="btn-start" class="btn-start">Играть</button>
             </div>
             <div class="menu-options" role="group" aria-label="Опции">
-              <div class="menu-options-title">Звук и музыка</div>
+              <div id="menu-options-title" class="menu-options-title">Звук и музыка</div>
               <div class="menu-volume-row">
                 <label for="opt-volume" class="menu-volume-label">
-                  <span class="menu-volume-title">Громкость</span>
+                  <span id="menu-volume-title" class="menu-volume-title">Громкость</span>
                   <span id="opt-volume-value" class="menu-volume-value">100%</span>
                 </label>
                 <input
@@ -111,7 +126,7 @@
                     <span class="menu-option-emoji-off">🔇</span>
                   </span>
                   <span class="menu-option-text">
-                    <span class="menu-option-title">Звуки в игре</span>
+                    <span id="menu-sounds-title" class="menu-option-title">Звуки в игре</span>
                   </span>
                 </span>
                 <span class="menu-option-switch" aria-hidden="true"><span class="menu-option-knob"></span></span>
@@ -124,8 +139,8 @@
                     <span class="menu-option-emoji-off">🔇</span>
                   </span>
                   <span class="menu-option-text">
-                    <span class="menu-option-title">Музыка</span>
-                    <span class="menu-option-desc">Меню и игра</span>
+                    <span id="menu-music-title" class="menu-option-title">Музыка</span>
+                    <span id="menu-music-desc" class="menu-option-desc">Меню и игра</span>
                   </span>
                 </span>
                 <span class="menu-option-switch" aria-hidden="true"><span class="menu-option-knob"></span></span>
@@ -135,7 +150,7 @@
         </div>
         <div id="loading" class="visible">
           <div id="loading-logo" aria-hidden="true">⌖</div>
-          <div id="loading-text">Loading Models...</div>
+          <div id="loading-text">Загрузка моделей…</div>
           <div id="progress-container">
             <div id="progress-bar"></div>
           </div>

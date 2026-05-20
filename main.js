@@ -6,6 +6,116 @@ const STORAGE_SFX_OFF = 'roof-leak-sfx-off';
 const STORAGE_MUSIC_OFF = 'roof-leak-music-off';
 const STORAGE_PLAYER_COUNT = 'roof-leak-player-count';
 const STORAGE_VOLUME = 'roof-leak-volume';
+const STORAGE_LANG = 'roof-leak-lang';
+
+const I18N = {
+    ru: {
+        pageTitle: 'Протечка крыши',
+        heroTitle: 'ПРОТЕЧКА',
+        heroSub: 'трекинг рук · ведро · лови капли',
+        menuHeading: 'Ловите капли с протекающей крыши',
+        menuHint:
+            'Разведите руки перед камерой — между ними появится ведро. Капли падают сверху в случайных местах. Поймайте их в ведро, иначе вода поднимается с пола. Если уровень воды превысит 50% экрана — игра окончена.',
+        playersLabel: 'Игроков на камере',
+        playersOne: 'Один',
+        playersTwo: 'Два',
+        playersHint: 'В режиме «Два» у каждого своё ведро, общий счёт и уровень воды.',
+        langLabel: 'Язык',
+        langRu: 'RU',
+        langEn: 'EN',
+        play: 'Играть',
+        optionsAria: 'Опции',
+        soundSection: 'Звук и музыка',
+        volume: 'Громкость',
+        gameSounds: 'Звуки в игре',
+        gameSoundsAria: 'Отключить звуки в игре',
+        music: 'Музыка',
+        musicDesc: 'Меню и игра',
+        musicAria: 'Отключить музыку',
+        fullscreen: 'На весь экран',
+        exitFullscreen: 'Свернуть',
+        menu: 'Меню',
+        score: 'Поймано: {n}',
+        waterMeterAria: 'Уровень воды на полу',
+        trackingNeedHands: 'Покажите обе руки в кадре',
+        trackingActive: 'Руки отслеживаются · держите ведро',
+        tracking2Active: '2 игрока · общий счёт и вода',
+        tracking2NeedSecond: '2 игрока · позовите второго в кадр',
+        tracking2NeedBoth: '2 игрока · встаньте в кадр оба',
+        mugSolo: 'Кружка',
+        mugPlayer: 'Игрок {n} · кружка',
+        gameOver: 'GAME OVER · поймано {n}',
+        loadingModels: 'Загрузка моделей…',
+        startErrorTitle: 'Не удалось запустить игру.',
+        startErrorHintDefault:
+            'Откройте консоль браузера (F12 → Console) и при необходимости пришлите текст ошибки.',
+        startErrorCameraBlocked:
+            'Браузер заблокировал камеру для этого сайта. Нажмите на значок замка слева от адреса → разрешите камеру, обновите страницу.',
+        startErrorNoCamera: 'Камера не найдена. Проверьте, что она подключена и не занята другим приложением.',
+        startErrorTimeout:
+            'Камера не успела запуститься. Закройте другие программы, использующие камеру, и обновите страницу.'
+    },
+    en: {
+        pageTitle: 'Roof Leak',
+        heroTitle: 'ROOF LEAK',
+        heroSub: 'hand tracking · bucket · catch drops',
+        menuHeading: 'Catch drops from the leaking roof',
+        menuHint:
+            'Spread your hands in front of the camera — a bucket appears between your wrists. Drops fall from random spots. Catch them in the bucket, or the water level on the floor will rise. If the water exceeds 50% of the screen — game over.',
+        playersLabel: 'Players on camera',
+        playersOne: 'One',
+        playersTwo: 'Two',
+        playersHint: 'In Two-player mode each player gets a bucket; score and water level are shared.',
+        langLabel: 'Language',
+        langRu: 'RU',
+        langEn: 'EN',
+        play: 'Play',
+        optionsAria: 'Options',
+        soundSection: 'Sound & music',
+        volume: 'Volume',
+        gameSounds: 'Game sounds',
+        gameSoundsAria: 'Disable game sounds',
+        music: 'Music',
+        musicDesc: 'Menu and game',
+        musicAria: 'Disable music',
+        fullscreen: 'Fullscreen',
+        exitFullscreen: 'Exit fullscreen',
+        menu: 'Menu',
+        score: 'Caught: {n}',
+        waterMeterAria: 'Water level on the floor',
+        trackingNeedHands: 'Show both hands in frame',
+        trackingActive: 'Hands tracked · hold the bucket',
+        tracking2Active: '2 players · shared score and water',
+        tracking2NeedSecond: '2 players · invite the second player',
+        tracking2NeedBoth: '2 players · both stand in frame',
+        mugSolo: 'Mug',
+        mugPlayer: 'Player {n} · mug',
+        gameOver: 'GAME OVER · caught {n}',
+        loadingModels: 'Loading models…',
+        startErrorTitle: 'Failed to start the game.',
+        startErrorHintDefault: 'Open the browser console (F12 → Console) and share the error if needed.',
+        startErrorCameraBlocked:
+            'The browser blocked the camera for this site. Click the lock icon next to the address bar → allow camera, then refresh.',
+        startErrorNoCamera: 'No camera found. Check that it is connected and not used by another app.',
+        startErrorTimeout:
+            'The camera did not start in time. Close other apps using the camera and refresh the page.'
+    }
+};
+
+let uiLang = 'ru';
+
+function loadLangFromStorage() {
+    const raw = localStorage.getItem(STORAGE_LANG);
+    return raw === 'en' ? 'en' : 'ru';
+}
+
+function t(key, vars = {}) {
+    let s = I18N[uiLang]?.[key] ?? I18N.ru[key] ?? key;
+    for (const [k, v] of Object.entries(vars)) {
+        s = s.replace(`{${k}}`, String(v));
+    }
+    return s;
+}
 
 const BASE_MENU_MUSIC_VOL = 0.52;
 const BASE_GAME_MUSIC_VOL = 0.46;
@@ -107,11 +217,14 @@ function loadPersistedSettings() {
     soundEffectsEnabled = localStorage.getItem(STORAGE_SFX_OFF) !== '1';
     musicEnabled = localStorage.getItem(STORAGE_MUSIC_OFF) !== '1';
     masterVolume = loadMasterVolumeFromStorage();
+    uiLang = loadLangFromStorage();
     const sfxCb = document.getElementById('opt-sound-off');
     const musicCb = document.getElementById('opt-music-off');
     if (sfxCb) sfxCb.checked = !soundEffectsEnabled;
     if (musicCb) musicCb.checked = !musicEnabled;
+    syncLangRadios();
     updateVolumeUi();
+    applyUiLanguage();
 }
 
 const SFX_CATCH_URL = new URL('./src/assets/sounds/drops/Water Drop In Bucket.mp3', import.meta.url).href;
@@ -377,6 +490,7 @@ const hudGame = document.getElementById('hud-game');
 const btnBackMenu = document.getElementById('btn-back-menu');
 const btnStart = document.getElementById('btn-start');
 const trackingDisplay = document.getElementById('tracking-display');
+const loadingText = document.getElementById('loading-text');
 const mugTimersPanel = document.getElementById('mug-timers');
 const mugTimerRows = [0, 1].map((pi) => ({
     row: document.getElementById(`mug-timer-p${pi}`),
@@ -548,6 +662,70 @@ function getMugTimeLeft(poseKey, nowMs) {
     return until - nowMs;
 }
 
+let lastTrackingPersons = [];
+let lastTrackingBuckets = [];
+
+function applyUiLanguage() {
+    document.documentElement.lang = uiLang;
+    document.title = t('pageTitle');
+
+    const setText = (id, key) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = t(key);
+    };
+
+    setText('menu-hero-title', 'heroTitle');
+    setText('menu-hero-sub', 'heroSub');
+    setText('menu-heading', 'menuHeading');
+    setText('menu-hint', 'menuHint');
+    setText('menu-player-label', 'playersLabel');
+    setText('opt-players-1-label', 'playersOne');
+    setText('opt-players-2-label', 'playersTwo');
+    setText('menu-player-hint', 'playersHint');
+    setText('menu-lang-label', 'langLabel');
+    setText('opt-lang-ru-label', 'langRu');
+    setText('opt-lang-en-label', 'langEn');
+    setText('menu-options-title', 'soundSection');
+    setText('menu-volume-title', 'volume');
+    setText('menu-sounds-title', 'gameSounds');
+    setText('menu-music-title', 'music');
+    setText('menu-music-desc', 'musicDesc');
+    if (btnStart) btnStart.textContent = t('play');
+    if (btnBackMenu) btnBackMenu.textContent = t('menu');
+    if (loadingText) loadingText.textContent = t('loadingModels');
+
+    const menuOptions = document.querySelector('.menu-options');
+    if (menuOptions) menuOptions.setAttribute('aria-label', t('optionsAria'));
+    if (optSoundOff) optSoundOff.setAttribute('aria-label', t('gameSoundsAria'));
+    if (optMusicOff) optMusicOff.setAttribute('aria-label', t('musicAria'));
+    if (btnFullscreen) btnFullscreen.setAttribute('aria-label', t('fullscreen'));
+    const waterMeter = document.getElementById('water-meter');
+    if (waterMeter) waterMeter.setAttribute('aria-label', t('waterMeterAria'));
+
+    syncFullscreenButton();
+    updateHud();
+    updateTrackingDisplay(lastTrackingPersons, lastTrackingBuckets);
+    updateMugTimerHud(lastTrackingBuckets, performance.now());
+    if (gameOverOverlay && !gameOverOverlay.classList.contains('is-hidden')) {
+        gameOverOverlay.textContent = t('gameOver', { n: score });
+    }
+}
+
+function syncLangRadios() {
+    const ru = document.getElementById('opt-lang-ru');
+    const en = document.getElementById('opt-lang-en');
+    if (ru) ru.checked = uiLang === 'ru';
+    if (en) en.checked = uiLang === 'en';
+}
+
+function applyLangFromUi() {
+    const next = document.getElementById('opt-lang-en')?.checked ? 'en' : 'ru';
+    if (next === uiLang) return;
+    uiLang = next;
+    localStorage.setItem(STORAGE_LANG, uiLang);
+    applyUiLanguage();
+}
+
 function updateMugTimerHud(activeBuckets, nowMs) {
     if (!mugTimersPanel) return;
     let any = false;
@@ -563,7 +741,8 @@ function updateMugTimerHud(activeBuckets, nowMs) {
             const frac = left / GAME_CFG.mugModeDurationMs;
             if (ui.fill) ui.fill.style.width = `${Math.max(0, frac * 100)}%`;
             if (ui.name) {
-                ui.name.textContent = playerModeCount === 1 ? 'Кружка' : `Игрок ${pi + 1} · кружка`;
+                ui.name.textContent =
+                    playerModeCount === 1 ? t('mugSolo') : t('mugPlayer', { n: pi + 1 });
             }
         } else if (ui.row) {
             ui.row.classList.add('is-hidden');
@@ -574,7 +753,7 @@ function updateMugTimerHud(activeBuckets, nowMs) {
 }
 
 function updateHud() {
-    if (scoreDisplay) scoreDisplay.innerText = `Поймано: ${score}`;
+    if (scoreDisplay) scoreDisplay.innerText = t('score', { n: score });
     const pct = Math.min(100, Math.round(waterLevel * 100));
     if (waterMeterFill) waterMeterFill.style.height = `${pct}%`;
     if (waterMeterLabel) waterMeterLabel.textContent = `${pct}%`;
@@ -588,7 +767,7 @@ function triggerGameOver() {
     stopGameMusic();
     isPlaying = false;
     if (gameOverOverlay) {
-        gameOverOverlay.textContent = `GAME OVER · поймано ${score}`;
+        gameOverOverlay.textContent = t('gameOver', { n: score });
         gameOverOverlay.classList.remove('is-hidden');
     }
 }
@@ -677,7 +856,7 @@ function syncFullscreenButton() {
     if (!btnFullscreen) return;
     const isFs = !!getCurrentFullscreenElement();
     btnFullscreen.classList.toggle('is-active', isFs);
-    if (btnFullscreenLabel) btnFullscreenLabel.textContent = isFs ? 'Свернуть' : 'На весь экран';
+    if (btnFullscreenLabel) btnFullscreenLabel.textContent = isFs ? t('exitFullscreen') : t('fullscreen');
 }
 
 if (btnFullscreen) {
@@ -700,6 +879,7 @@ mainMenu.addEventListener(
         tryUnlockAudioOnUserGesture();
         if (e.target?.closest?.('#btn-start')) return;
         if (e.target?.closest?.('#btn-fullscreen')) return;
+        if (e.target?.closest?.('#ui-lang-picker')) return;
         if (e.target?.closest?.('.menu-player-row')) return;
         if (e.target?.closest?.('.menu-options')) return;
         playMenuMusic();
@@ -786,6 +966,15 @@ optPlayers1?.addEventListener('change', () => {
 });
 optPlayers2?.addEventListener('change', () => {
     if (optPlayers2.checked) applyPlayerModeFromUi(true);
+});
+
+const optLangRu = document.getElementById('opt-lang-ru');
+const optLangEn = document.getElementById('opt-lang-en');
+optLangRu?.addEventListener('change', () => {
+    if (optLangRu.checked) applyLangFromUi();
+});
+optLangEn?.addEventListener('change', () => {
+    if (optLangEn.checked) applyLangFromUi();
 });
 
 syncPlayerCountRadios();
@@ -1494,17 +1683,16 @@ function updateTrackingDisplay(orderedPersons, activeBuckets) {
     const buckets = activeBuckets.length;
 
     if (playerModeCount === 1) {
-        trackingDisplay.textContent =
-            buckets >= 1 ? 'Руки отслеживаются · держите ведро' : 'Покажите обе руки в кадре';
+        trackingDisplay.textContent = buckets >= 1 ? t('trackingActive') : t('trackingNeedHands');
         return;
     }
 
     if (n >= 2 && buckets >= 2) {
-        trackingDisplay.textContent = '2 игрока · общий счёт и вода';
+        trackingDisplay.textContent = t('tracking2Active');
     } else if (n >= 1 && buckets >= 1) {
-        trackingDisplay.textContent = '2 игрока · позовите второго в кадр';
+        trackingDisplay.textContent = t('tracking2NeedSecond');
     } else {
-        trackingDisplay.textContent = '2 игрока · встаньте в кадр оба';
+        trackingDisplay.textContent = t('tracking2NeedBoth');
     }
 }
 
@@ -1605,6 +1793,8 @@ function gameLoop(nowTime) {
         bucketByPoseKey.clear();
     }
 
+    lastTrackingPersons = orderedPersons;
+    lastTrackingBuckets = activeBuckets;
     updateTrackingDisplay(orderedPersons, activeBuckets);
     updateMugTimerHud(activeBuckets, nowTime);
 
@@ -1717,28 +1907,25 @@ function showStartError(e) {
     console.error(e);
     const name = e?.name || '';
     const msg = e?.message || String(e);
-    let hint =
-        'Откройте консоль браузера (F12 → Console) и при необходимости пришлите текст ошибки.';
+    let hint = t('startErrorHintDefault');
     if (name === 'NotAllowedError' || /Permission/i.test(msg)) {
-        hint =
-            'Браузер заблокировал камеру для этого сайта. Нажмите на значок замка слева от адреса → разрешите камеру, обновите страницу.';
+        hint = t('startErrorCameraBlocked');
     } else if (name === 'NotFoundError' || /DevicesNotFound/i.test(msg)) {
-        hint = 'Камера не найдена. Проверьте, что она подключена и не занята другим приложением.';
+        hint = t('startErrorNoCamera');
     } else if (
         name === 'AbortError' ||
         /Timeout starting video source|metadata timeout/i.test(msg)
     ) {
-        hint =
-            'Камера не успела запуститься. Закройте другие программы, использующие камеру, и обновите страницу.';
+        hint = t('startErrorTimeout');
     }
     loadingElement.innerHTML = '';
     const wrap = document.createElement('div');
     wrap.style.cssText = 'max-width:28rem;margin:0 auto;text-align:left;line-height:1.45;font-size:0.95rem;';
-    const t = document.createElement('p');
-    t.textContent = 'Не удалось запустить игру.';
-    t.style.fontWeight = '700';
-    t.style.marginBottom = '0.5rem';
-    wrap.appendChild(t);
+    const titleEl = document.createElement('p');
+    titleEl.textContent = t('startErrorTitle');
+    titleEl.style.fontWeight = '700';
+    titleEl.style.marginBottom = '0.5rem';
+    wrap.appendChild(titleEl);
     const d = document.createElement('p');
     d.style.opacity = '0.9';
     d.style.fontSize = '0.85rem';

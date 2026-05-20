@@ -279,12 +279,95 @@ canvas {
   box-shadow: 0 0 14px rgba(0, 0, 0, 0.45);
 }
 
-/** Floating «На весь экран» — всегда поверх меню и игры */
-#ui-layer > .btn-fullscreen {
+/** Floating controls — fullscreen + language */
+.ui-top-controls {
   position: fixed;
   top: max(0.75rem, env(safe-area-inset-top));
   right: max(0.75rem, env(safe-area-inset-right));
   z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.45rem;
+  pointer-events: none;
+}
+
+.ui-top-controls > * {
+  pointer-events: auto;
+}
+
+.ui-lang-picker {
+  padding: 0.45rem 0.5rem;
+  border-radius: 12px;
+  border: 1px solid rgba(0, 243, 255, 0.28);
+  background: rgba(8, 12, 22, 0.88);
+  box-shadow: 0 0 14px rgba(0, 0, 0, 0.35);
+}
+
+.ui-lang-label {
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(0, 243, 255, 0.85);
+  margin-bottom: 0.35rem;
+  text-align: center;
+}
+
+.ui-lang-segment {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.ui-lang-pill {
+  flex: 1;
+  position: relative;
+  cursor: pointer;
+  user-select: none;
+}
+
+.ui-lang-pill input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  pointer-events: none;
+}
+
+.ui-lang-pill input:focus-visible + span {
+  outline: 2px solid rgba(0, 243, 255, 0.75);
+  outline-offset: 2px;
+}
+
+.ui-lang-pill span {
+  display: block;
+  padding: 0.32rem 0.45rem;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-align: center;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.ui-lang-pill:hover span {
+  border-color: rgba(0, 243, 255, 0.35);
+}
+
+.ui-lang-pill input:checked + span {
+  border-color: rgba(0, 243, 255, 0.75);
+  background: rgba(0, 243, 255, 0.14);
+  color: #fff;
+  box-shadow: 0 0 10px rgba(0, 243, 255, 0.22);
+}
+
+/** Floating «На весь экран» — всегда поверх меню и игры */
+#ui-layer > .ui-top-controls .btn-fullscreen {
+  position: static;
 }
 
 .btn-fullscreen {
