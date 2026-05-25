@@ -1311,7 +1311,7 @@ function spawnMenuDrop(w, h, spreadY = false) {
         x: Math.random() * w,
         y: spreadY ? Math.random() * h : -r * 4 - Math.random() * h * 0.2,
         r,
-        vy: minSide * (0.0038 + Math.random() * 0.0028),
+        vy: minSide * (0.0016 + Math.random() * 0.0012),
         alpha: 0.62 + Math.random() * 0.28
     });
 }
@@ -1322,7 +1322,7 @@ function tickMenuDrops(dt) {
     const h = mainMenu.clientHeight;
     if (w !== menuDropsLastW || h !== menuDropsLastH) resizeMenuDropsCanvas();
 
-    if (menuFallingDrops.length < 20 && Math.random() < 0.055) {
+    if (menuFallingDrops.length < 8 && Math.random() < 0.022) {
         spawnMenuDrop(w, h);
     }
 
@@ -1356,7 +1356,7 @@ function startMenuDrops() {
     menuFallingDrops.length = 0;
     const w = mainMenu.clientWidth;
     const h = mainMenu.clientHeight;
-    for (let i = 0; i < 10; i++) spawnMenuDrop(w, h, true);
+    for (let i = 0; i < 4; i++) spawnMenuDrop(w, h, true);
     menuDropsAnimating = true;
     menuDropsLastTs = 0;
     menuDropsRaf = requestAnimationFrame(menuDropsLoop);
