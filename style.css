@@ -26,6 +26,10 @@ body, html {
   position: relative;
   overflow: hidden;
   margin: 0 auto;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 video {

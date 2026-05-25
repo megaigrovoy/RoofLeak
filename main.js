@@ -409,7 +409,7 @@ function getMenuMusicAudio() {
 }
 
 function playMenuMusic() {
-    if (!musicEnabled) return;
+    if (!musicEnabled || backgroundSuspended) return;
     void getMenuMusicAudio().play().catch(() => {});
 }
 
@@ -418,6 +418,15 @@ function pauseMenuMusic() {
         menuMusicAudio.pause();
         menuMusicAudio.currentTime = 0;
     }
+}
+
+function pauseMenuMusicSoft() {
+    if (menuMusicAudio) menuMusicAudio.pause();
+}
+
+function resumeMenuMusicSoft() {
+    if (!musicEnabled || backgroundSuspended) return;
+    void getMenuMusicAudio().play().catch(() => {});
 }
 
 function stopGameMusic() {
@@ -429,6 +438,19 @@ function stopGameMusic() {
         gameMusicAudio = null;
     }
     gameMusicOnEnded = null;
+}
+
+function pauseGameMusicSoft() {
+    if (gameMusicAudio) gameMusicAudio.pause();
+}
+
+function resumeGameMusicSoft() {
+    if (!musicEnabled || backgroundSuspended) return;
+    if (gameMusicAudio) {
+        void gameMusicAudio.play().catch(() => startGameMusicPlaylist());
+    } else {
+        startGameMusicPlaylist();
+    }
 }
 
 function playGameMusicTrackAt(index) {
@@ -452,6 +474,7 @@ function playGameMusicTrackAt(index) {
 }
 
 function startGameMusicPlaylist() {
+    if (backgroundSuspended) return;
     pauseMenuMusic();
     if (!musicEnabled || !GAME_BG_TRACKS.length) return;
     gameMusicPlaylist = [...GAME_BG_TRACKS];
@@ -501,6 +524,10 @@ let drops = [];
 let particles = [];
 let leakSpots = [];
 let isPlaying = false;
+let backgroundSuspended = false;
+let resumeGameAfterBackground = false;
+let resumeMenuMusicAfterBackground = false;
+let resumeMenuDropsAfterBackground = false;
 let lastFrameTime = performance.now();
 let lastSpawnTime = 0;
 let nextSpawnDelay = 900;
@@ -544,6 +571,50 @@ const WRIST_SMOOTH_ALPHA = 0.24;
 const WRIST_TELEPORT_PX = 38;
 const SHOULDER_SMOOTH_ALPHA = 0.12;
 const BUCKET_DISPLAY_SMOOTH_ALPHA = 0.2;
+
+function isMobileLikeDevice() {
+    if (typeof window === 'undefined') return false;
+    const minSide = Math.min(window.innerWidth, window.innerHeight);
+    return (
+        window.matchMedia('(pointer: coarse)').matches ||
+        window.matchMedia('(hover: none)').matches ||
+        minSide <= 820
+    );
+}
+
+function buildTrackTuning() {
+    const mobile = isMobileLikeDevice();
+    return {
+        mobile,
+        wristSmoothAlpha: mobile ? 0.1 : WRIST_SMOOTH_ALPHA,
+        bucketDisplaySmoothAlpha: mobile ? 0.08 : BUCKET_DISPLAY_SMOOTH_ALPHA,
+        shoulderSmoothAlpha: mobile ? 0.06 : SHOULDER_SMOOTH_ALPHA,
+        wristTeleportPx: mobile ? 72 : WRIST_TELEPORT_PX,
+        wristTeleportMul: mobile ? 0.11 : 0.045,
+        wristMinVisibility: mobile ? 0.52 : GAME_CFG.wristMinVisibility,
+        maxCanvasLongEdge: mobile ? 960 : 1280,
+        poseDetectIntervalMs: mobile ? 33 : 0,
+        smoothingStaleMs: mobile ? 400 : 180,
+        bucketGraceMs: mobile ? 220 : 0,
+        minPoseDetectionConfidence: mobile ? 0.62 : 0.5,
+        minTrackingConfidence: mobile ? 0.62 : 0.5,
+        minPosePresenceConfidence: mobile ? 0.62 : 0.5,
+        resizeDebounceMs: mobile ? 220 : 110
+    };
+}
+
+let trackTuning = buildTrackTuning();
+let poseVideoTsMs = 0;
+let lastPoseDetectWallMs = 0;
+const poseLastSeenMsByKey = new Map();
+const bucketGraceByPoseKey = new Map();
+
+function refreshTrackTuning() {
+    trackTuning = buildTrackTuning();
+}
+
+window.addEventListener('resize', refreshTrackTuning);
+refreshTrackTuning();
 /** poseKey → { left, right } */
 const wristSmoothByPoseKey = new Map();
 /** poseKey → smoothed shoulder width px */
@@ -560,7 +631,11 @@ function resetWristSmoothing() {
     shoulderWidthByPoseKey.clear();
     bucketDisplayByPoseKey.clear();
     mugModeUntilByPoseKey.clear();
+    poseLastSeenMsByKey.clear();
+    bucketGraceByPoseKey.clear();
     stablePoseShoulderMid = [];
+    poseVideoTsMs = 0;
+    lastPoseDetectWallMs = 0;
 }
 
 function isMugMode(poseKey, nowMs) {
@@ -583,18 +658,18 @@ function smoothShoulderWidth(poseKey, rawW) {
         shoulderWidthByPoseKey.set(poseKey, rawW);
         return rawW;
     }
-    const a = SHOULDER_SMOOTH_ALPHA;
+    const a = trackTuning.shoulderSmoothAlpha;
     const next = prev * (1 - a) + rawW * a;
     shoulderWidthByPoseKey.set(poseKey, next);
     return next;
 }
 
 function smoothWristPoint(prev, raw) {
-    const teleportPx = Math.max(WRIST_TELEPORT_PX, gameLayout.minSide * 0.045);
+    const teleportPx = Math.max(trackTuning.wristTeleportPx, gameLayout.minSide * trackTuning.wristTeleportMul);
     if (!prev || Math.hypot(raw.x - prev.x, raw.y - prev.y) > teleportPx) {
         return { x: raw.x, y: raw.y, visibility: raw.visibility };
     }
-    const a = WRIST_SMOOTH_ALPHA;
+    const a = trackTuning.wristSmoothAlpha;
     return {
         x: prev.x * (1 - a) + raw.x * a,
         y: prev.y * (1 - a) + raw.y * a,
@@ -610,7 +685,7 @@ function lerpAngle(from, to, a) {
 }
 
 function smoothBucketDisplay(poseKey, raw) {
-    const a = BUCKET_DISPLAY_SMOOTH_ALPHA;
+    const a = trackTuning.bucketDisplaySmoothAlpha;
     let st = bucketDisplayByPoseKey.get(poseKey);
     if (!st) {
         st = { cx: raw.cx, topY: raw.topY, angle: raw.angle };
@@ -744,6 +819,86 @@ function updateMugTimerHud(activeBuckets, nowMs) {
     mugTimersPanel.classList.toggle('is-hidden', !any);
 }
 
+function isPageHidden() {
+    return document.visibilityState === 'hidden' || document.hidden;
+}
+
+function pauseCameraTracks() {
+    const stream = video.srcObject;
+    if (stream?.getTracks) {
+        for (const track of stream.getTracks()) track.enabled = false;
+    }
+}
+
+function resumeCameraTracks() {
+    const stream = video.srcObject;
+    if (stream?.getTracks) {
+        for (const track of stream.getTracks()) track.enabled = true;
+    }
+}
+
+function suspendSharedAudio() {
+    const ctx = window.__roofLeakAudioCtx;
+    if (ctx?.state === 'running') void ctx.suspend();
+}
+
+function isMainMenuVisible() {
+    return Boolean(mainMenu && !mainMenu.classList.contains('is-hidden'));
+}
+
+function suspendAppForBackground() {
+    if (backgroundSuspended) return;
+    backgroundSuspended = true;
+
+    resumeGameAfterBackground = isPlaying;
+    resumeMenuMusicAfterBackground =
+        !isPlaying && isMainMenuVisible() && musicEnabled && Boolean(menuMusicAudio);
+    resumeMenuDropsAfterBackground = menuDropsAnimating;
+
+    if (isPlaying) {
+        isPlaying = false;
+        pauseGameMusicSoft();
+    } else {
+        pauseMenuMusicSoft();
+        if (menuDropsAnimating) stopMenuDrops();
+    }
+
+    void video.pause();
+    pauseCameraTracks();
+    suspendSharedAudio();
+}
+
+function resumeAppFromBackground() {
+    if (!backgroundSuspended || isPageHidden()) return;
+    backgroundSuspended = false;
+
+    resumeCameraTracks();
+
+    if (resumeGameAfterBackground) {
+        resumeGameAfterBackground = false;
+        resumeMenuMusicAfterBackground = false;
+        resumeMenuDropsAfterBackground = false;
+        lastFrameTime = performance.now();
+        isPlaying = true;
+        resumeSharedAudioContext();
+        void video.play().catch(() => {});
+        resumeGameMusicSoft();
+        requestAnimationFrame(gameLoop);
+        return;
+    }
+
+    resumeSharedAudioContext();
+    if (resumeMenuMusicAfterBackground) resumeMenuMusicSoft();
+    if (resumeMenuDropsAfterBackground) startMenuDrops();
+    resumeMenuMusicAfterBackground = false;
+    resumeMenuDropsAfterBackground = false;
+}
+
+function handlePageVisibilityChange() {
+    if (isPageHidden()) suspendAppForBackground();
+    else resumeAppFromBackground();
+}
+
 function updateHud() {
     if (scoreDisplay) scoreDisplay.innerText = t('score', { n: score });
     const pct = Math.min(100, Math.round(waterLevel * 100));
@@ -784,6 +939,10 @@ function showMainMenu() {
 
 function startGame() {
     tryUnlockAudioOnUserGesture();
+    refreshTrackTuning();
+    if (trackTuning.mobile) {
+        console.info('[RoofLeak] mobile tracking tuning active', trackTuning);
+    }
     gameOverOverlay?.classList.add('is-hidden');
     score = 0;
     waterLevel = 0;
@@ -984,7 +1143,10 @@ async function createPoseLandmarkerInstance() {
             delegate
         },
         runningMode: 'VIDEO',
-        numPoses: np
+        numPoses: np,
+        minPoseDetectionConfidence: trackTuning.minPoseDetectionConfidence,
+        minTrackingConfidence: trackTuning.minTrackingConfidence,
+        minPosePresenceConfidence: trackTuning.minPosePresenceConfidence
     });
 
     try {
@@ -995,12 +1157,11 @@ async function createPoseLandmarkerInstance() {
         poseLandmarker = await PoseLandmarker.createFromOptions(vision, poseOpts('CPU'));
         mediapipePoseDelegate = 'CPU';
     }
-    console.info(`[RoofLeak] pose delegate: ${mediapipePoseDelegate}, numPoses=${np}`);
+    console.info(`[RoofLeak] pose delegate: ${mediapipePoseDelegate}, numPoses=${np}, mobile=${trackTuning.mobile}`);
 }
 
 let gameLayout = { w: 800, h: 600, minSide: 600 };
 
-const MAX_CANVAS_LONG_EDGE_PX = 1280;
 let loggedCanvasBufferCap = false;
 
 function readViewportSize() {
@@ -1022,8 +1183,9 @@ function resizeCanvas() {
     let iw = vw;
     let ih = vh;
     const longEdge = Math.max(iw, ih);
-    if (longEdge > MAX_CANVAS_LONG_EDGE_PX) {
-        const s = MAX_CANVAS_LONG_EDGE_PX / longEdge;
+    const maxLong = trackTuning.maxCanvasLongEdge;
+    if (longEdge > maxLong) {
+        const s = maxLong / longEdge;
         iw = Math.max(1, Math.floor(vw * s));
         ih = Math.max(1, Math.floor(vh * s));
     }
@@ -1066,12 +1228,21 @@ function scheduleResizeCanvas() {
         resizeCanvasDebounce = 0;
         resizeCanvas();
         if (menuDropsAnimating) resizeMenuDropsCanvas();
-    }, 110);
+    }, trackTuning.resizeDebounceMs);
     if (menuDropsAnimating) resizeMenuDropsCanvas();
 }
 
 window.addEventListener('resize', scheduleResizeCanvas);
 window.visualViewport?.addEventListener('resize', scheduleResizeCanvas);
+document.addEventListener('visibilitychange', handlePageVisibilityChange);
+window.addEventListener('pagehide', () => {
+    if (isPageHidden()) suspendAppForBackground();
+});
+window.addEventListener('pageshow', () => {
+    if (!isPageHidden()) resumeAppFromBackground();
+});
+document.addEventListener('freeze', suspendAppForBackground);
+document.addEventListener('resume', resumeAppFromBackground);
 resizeCanvas();
 
 function stopVideoTracks() {
@@ -1121,12 +1292,27 @@ async function setupWebcam() {
     video.setAttribute('playsinline', '');
     video.setAttribute('autoplay', '');
 
-    const constraintSets = [
-        { video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' } },
-        { video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' } },
-        { video: { facingMode: 'user' } },
-        { video: true }
-    ];
+    const mobile = trackTuning.mobile;
+    const constraintSets = mobile
+        ? [
+              {
+                  video: {
+                      facingMode: 'user',
+                      width: { ideal: 640, max: 960 },
+                      height: { ideal: 480, max: 720 },
+                      frameRate: { ideal: 30, max: 30 }
+                  }
+              },
+              { video: { facingMode: 'user', frameRate: { ideal: 30, max: 30 } } },
+              { video: { facingMode: 'user' } },
+              { video: true }
+          ]
+        : [
+              { video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' } },
+              { video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' } },
+              { video: { facingMode: 'user' } },
+              { video: true }
+          ];
 
     let lastErr;
     for (const constraints of constraintSets) {
@@ -1162,6 +1348,7 @@ async function initializeModels() {
     console.info(`[RoofLeak] MediaPipe WASM: ${visionWasmSource}`);
 
     visionTasksResolver = vision;
+    refreshTrackTuning();
     await createPoseLandmarkerInstance();
 
     preloadGameAudio();
@@ -1350,7 +1537,7 @@ function menuDropsLoop(ts) {
 }
 
 function startMenuDrops() {
-    if (!menuDropsCanvas || mainMenu?.classList.contains('is-hidden')) return;
+    if (!menuDropsCanvas || mainMenu?.classList.contains('is-hidden') || backgroundSuspended) return;
     stopMenuDrops();
     resizeMenuDropsCanvas();
     menuFallingDrops.length = 0;
@@ -1723,19 +1910,38 @@ function playerIndexFromPoseKey(poseKey) {
     return m ? parseInt(m[1], 10) : 0;
 }
 
-function updateHandsFromPose(landmarks, getScreenPoint, poseKey) {
+function purgeStalePoseKey(key, nowMs) {
+    const lastSeen = poseLastSeenMsByKey.get(key) ?? 0;
+    if (nowMs - lastSeen <= trackTuning.smoothingStaleMs) return false;
+    wristSmoothByPoseKey.delete(key);
+    shoulderWidthByPoseKey.delete(key);
+    bucketDisplayByPoseKey.delete(key);
+    bucketByPoseKey.delete(key);
+    bucketGraceByPoseKey.delete(key);
+    poseLastSeenMsByKey.delete(key);
+    return true;
+}
+
+function updateHandsFromPose(landmarks, getScreenPoint, poseKey, nowMs) {
+    const holdBucketIfGrace = () => {
+        if (!trackTuning.bucketGraceMs) return null;
+        const lastBucket = bucketByPoseKey.get(poseKey);
+        const graceUntil = bucketGraceByPoseKey.get(poseKey) ?? 0;
+        if (lastBucket && nowMs < graceUntil) return lastBucket;
+        bucketByPoseKey.delete(poseKey);
+        return null;
+    };
+
     const lw = landmarks[15];
     const rw = landmarks[16];
     const ls = landmarks[11];
     const rs = landmarks[12];
     if (!lw || !rw || !ls || !rs) {
-        bucketByPoseKey.delete(poseKey);
-        return null;
+        return holdBucketIfGrace();
     }
     const vis = Math.min(lw.visibility ?? 1, rw.visibility ?? 1, ls.visibility ?? 1, rs.visibility ?? 1);
-    if (vis < GAME_CFG.wristMinVisibility) {
-        bucketByPoseKey.delete(poseKey);
-        return null;
+    if (vis < trackTuning.wristMinVisibility) {
+        return holdBucketIfGrace();
     }
 
     const leftRaw = getScreenPoint(lw);
@@ -1747,8 +1953,7 @@ function updateHandsFromPose(landmarks, getScreenPoint, poseKey) {
     const p12 = getScreenPoint(rs);
     const shoulderWRaw = Math.hypot(p12.x - p11.x, p12.y - p11.y);
     if (shoulderWRaw < GAME_CFG.shoulderMinPx) {
-        bucketByPoseKey.delete(poseKey);
-        return null;
+        return holdBucketIfGrace();
     }
     const shoulderW = smoothShoulderWidth(poseKey, shoulderWRaw);
 
@@ -1761,9 +1966,12 @@ function updateHandsFromPose(landmarks, getScreenPoint, poseKey) {
 
     const bucket = smoothBucketDisplay(
         poseKey,
-        computeBucket(state.left, state.right, shoulderW, poseKey, performance.now())
+        computeBucket(state.left, state.right, shoulderW, poseKey, nowMs)
     );
     bucketByPoseKey.set(poseKey, bucket);
+    if (trackTuning.bucketGraceMs) {
+        bucketGraceByPoseKey.set(poseKey, nowMs + trackTuning.bucketGraceMs);
+    }
     return bucket;
 }
 
@@ -1817,12 +2025,19 @@ function gameLoop(nowTime) {
 
     if (lastVideoTime !== video.currentTime) {
         lastVideoTime = video.currentTime;
-        const frameTsMs = Number.isFinite(video.currentTime) ? video.currentTime * 1000 : startTimeMs;
-        try {
-            const pRes = poseLandmarker.detectForVideo(video, frameTsMs);
-            if (pRes) currentPoseResults = pRes;
-        } catch (err) {
-            console.warn('PoseLandmarker detectForVideo:', err);
+        const detectInterval = trackTuning.poseDetectIntervalMs;
+        const shouldDetect =
+            detectInterval <= 0 || nowTime - lastPoseDetectWallMs >= detectInterval;
+        if (shouldDetect) {
+            lastPoseDetectWallMs = nowTime;
+            const rawTsMs = Number.isFinite(video.currentTime) ? video.currentTime * 1000 : nowTime;
+            poseVideoTsMs = Math.max(poseVideoTsMs + 1, rawTsMs);
+            try {
+                const pRes = poseLandmarker.detectForVideo(video, poseVideoTsMs);
+                if (pRes) currentPoseResults = pRes;
+            } catch (err) {
+                console.warn('PoseLandmarker detectForVideo:', err);
+            }
         }
     }
 
@@ -1862,22 +2077,22 @@ function gameLoop(nowTime) {
     if (currentPoseResults?.landmarks) {
         orderedPersons = bindStablePoseKeys(getOrderedPersons(currentPoseResults), getScreenPoint);
         const activeKeys = new Set(orderedPersons.map((p) => p.key));
-        for (const k of [...bucketByPoseKey.keys()]) {
-            if (!activeKeys.has(k)) bucketByPoseKey.delete(k);
+        for (const { lm, key } of orderedPersons) {
+            poseLastSeenMsByKey.set(key, nowTime);
+            const bucket = updateHandsFromPose(lm, getScreenPoint, key, nowTime);
+            if (bucket) activeBuckets.push(bucket);
         }
         for (const k of [...wristSmoothByPoseKey.keys()]) {
-            if (!activeKeys.has(k)) wristSmoothByPoseKey.delete(k);
+            if (!activeKeys.has(k)) purgeStalePoseKey(k, nowTime);
         }
-        for (const k of [...shoulderWidthByPoseKey.keys()]) {
-            if (!activeKeys.has(k)) shoulderWidthByPoseKey.delete(k);
+        for (const k of [...bucketByPoseKey.keys()]) {
+            if (!activeKeys.has(k)) purgeStalePoseKey(k, nowTime);
         }
-        for (const k of [...bucketDisplayByPoseKey.keys()]) {
-            if (!activeKeys.has(k)) bucketDisplayByPoseKey.delete(k);
-        }
-
-        for (const { lm, key } of orderedPersons) {
-            const bucket = updateHandsFromPose(lm, getScreenPoint, key);
-            if (bucket) activeBuckets.push(bucket);
+    } else if (trackTuning.bucketGraceMs) {
+        for (const [key, graceUntil] of bucketGraceByPoseKey) {
+            const bucket = bucketByPoseKey.get(key);
+            if (bucket && nowTime < graceUntil) activeBuckets.push(bucket);
+            else purgeStalePoseKey(key, nowTime);
         }
     } else {
         bucketByPoseKey.clear();
@@ -2036,6 +2251,7 @@ async function start() {
     try {
         await setupWebcam();
         await Promise.all([initializeModels(), preloadSprites()]);
+        if (isPageHidden()) suspendAppForBackground();
     } catch (e) {
         showStartError(e);
     }
