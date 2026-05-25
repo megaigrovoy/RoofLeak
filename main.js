@@ -586,28 +586,21 @@ function buildTrackTuning() {
     const mobile = isMobileLikeDevice();
     return {
         mobile,
-        wristSmoothAlpha: mobile ? 0.1 : WRIST_SMOOTH_ALPHA,
-        bucketDisplaySmoothAlpha: mobile ? 0.08 : BUCKET_DISPLAY_SMOOTH_ALPHA,
-        shoulderSmoothAlpha: mobile ? 0.06 : SHOULDER_SMOOTH_ALPHA,
-        wristTeleportPx: mobile ? 72 : WRIST_TELEPORT_PX,
-        wristTeleportMul: mobile ? 0.11 : 0.045,
-        wristMinVisibility: mobile ? 0.52 : GAME_CFG.wristMinVisibility,
+        wristSmoothAlpha: WRIST_SMOOTH_ALPHA,
+        bucketDisplaySmoothAlpha: BUCKET_DISPLAY_SMOOTH_ALPHA,
+        shoulderSmoothAlpha: SHOULDER_SMOOTH_ALPHA,
+        wristTeleportPx: WRIST_TELEPORT_PX,
+        wristTeleportMul: 0.045,
+        wristMinVisibility: GAME_CFG.wristMinVisibility,
         maxCanvasLongEdge: mobile ? 960 : 1280,
-        poseDetectIntervalMs: mobile ? 33 : 0,
-        smoothingStaleMs: mobile ? 400 : 180,
-        bucketGraceMs: mobile ? 220 : 0,
-        minPoseDetectionConfidence: mobile ? 0.62 : 0.5,
-        minTrackingConfidence: mobile ? 0.62 : 0.5,
-        minPosePresenceConfidence: mobile ? 0.62 : 0.5,
+        minPoseDetectionConfidence: 0.5,
+        minTrackingConfidence: 0.5,
+        minPosePresenceConfidence: 0.5,
         resizeDebounceMs: mobile ? 220 : 110
     };
 }
 
 let trackTuning = buildTrackTuning();
-let poseVideoTsMs = 0;
-let lastPoseDetectWallMs = 0;
-const poseLastSeenMsByKey = new Map();
-const bucketGraceByPoseKey = new Map();
 
 function refreshTrackTuning() {
     trackTuning = buildTrackTuning();
@@ -631,11 +624,7 @@ function resetWristSmoothing() {
     shoulderWidthByPoseKey.clear();
     bucketDisplayByPoseKey.clear();
     mugModeUntilByPoseKey.clear();
-    poseLastSeenMsByKey.clear();
-    bucketGraceByPoseKey.clear();
     stablePoseShoulderMid = [];
-    poseVideoTsMs = 0;
-    lastPoseDetectWallMs = 0;
 }
 
 function isMugMode(poseKey, nowMs) {
@@ -1910,38 +1899,19 @@ function playerIndexFromPoseKey(poseKey) {
     return m ? parseInt(m[1], 10) : 0;
 }
 
-function purgeStalePoseKey(key, nowMs) {
-    const lastSeen = poseLastSeenMsByKey.get(key) ?? 0;
-    if (nowMs - lastSeen <= trackTuning.smoothingStaleMs) return false;
-    wristSmoothByPoseKey.delete(key);
-    shoulderWidthByPoseKey.delete(key);
-    bucketDisplayByPoseKey.delete(key);
-    bucketByPoseKey.delete(key);
-    bucketGraceByPoseKey.delete(key);
-    poseLastSeenMsByKey.delete(key);
-    return true;
-}
-
-function updateHandsFromPose(landmarks, getScreenPoint, poseKey, nowMs) {
-    const holdBucketIfGrace = () => {
-        if (!trackTuning.bucketGraceMs) return null;
-        const lastBucket = bucketByPoseKey.get(poseKey);
-        const graceUntil = bucketGraceByPoseKey.get(poseKey) ?? 0;
-        if (lastBucket && nowMs < graceUntil) return lastBucket;
-        bucketByPoseKey.delete(poseKey);
-        return null;
-    };
-
+function updateHandsFromPose(landmarks, getScreenPoint, poseKey) {
     const lw = landmarks[15];
     const rw = landmarks[16];
     const ls = landmarks[11];
     const rs = landmarks[12];
     if (!lw || !rw || !ls || !rs) {
-        return holdBucketIfGrace();
+        bucketByPoseKey.delete(poseKey);
+        return null;
     }
     const vis = Math.min(lw.visibility ?? 1, rw.visibility ?? 1, ls.visibility ?? 1, rs.visibility ?? 1);
     if (vis < trackTuning.wristMinVisibility) {
-        return holdBucketIfGrace();
+        bucketByPoseKey.delete(poseKey);
+        return null;
     }
 
     const leftRaw = getScreenPoint(lw);
@@ -1953,7 +1923,8 @@ function updateHandsFromPose(landmarks, getScreenPoint, poseKey, nowMs) {
     const p12 = getScreenPoint(rs);
     const shoulderWRaw = Math.hypot(p12.x - p11.x, p12.y - p11.y);
     if (shoulderWRaw < GAME_CFG.shoulderMinPx) {
-        return holdBucketIfGrace();
+        bucketByPoseKey.delete(poseKey);
+        return null;
     }
     const shoulderW = smoothShoulderWidth(poseKey, shoulderWRaw);
 
@@ -1966,12 +1937,9 @@ function updateHandsFromPose(landmarks, getScreenPoint, poseKey, nowMs) {
 
     const bucket = smoothBucketDisplay(
         poseKey,
-        computeBucket(state.left, state.right, shoulderW, poseKey, nowMs)
+        computeBucket(state.left, state.right, shoulderW, poseKey, performance.now())
     );
     bucketByPoseKey.set(poseKey, bucket);
-    if (trackTuning.bucketGraceMs) {
-        bucketGraceByPoseKey.set(poseKey, nowMs + trackTuning.bucketGraceMs);
-    }
     return bucket;
 }
 
@@ -2025,19 +1993,12 @@ function gameLoop(nowTime) {
 
     if (lastVideoTime !== video.currentTime) {
         lastVideoTime = video.currentTime;
-        const detectInterval = trackTuning.poseDetectIntervalMs;
-        const shouldDetect =
-            detectInterval <= 0 || nowTime - lastPoseDetectWallMs >= detectInterval;
-        if (shouldDetect) {
-            lastPoseDetectWallMs = nowTime;
-            const rawTsMs = Number.isFinite(video.currentTime) ? video.currentTime * 1000 : nowTime;
-            poseVideoTsMs = Math.max(poseVideoTsMs + 1, rawTsMs);
-            try {
-                const pRes = poseLandmarker.detectForVideo(video, poseVideoTsMs);
-                if (pRes) currentPoseResults = pRes;
-            } catch (err) {
-                console.warn('PoseLandmarker detectForVideo:', err);
-            }
+        const frameTsMs = Number.isFinite(video.currentTime) ? video.currentTime * 1000 : startTimeMs;
+        try {
+            const pRes = poseLandmarker.detectForVideo(video, frameTsMs);
+            if (pRes) currentPoseResults = pRes;
+        } catch (err) {
+            console.warn('PoseLandmarker detectForVideo:', err);
         }
     }
 
@@ -2077,22 +2038,22 @@ function gameLoop(nowTime) {
     if (currentPoseResults?.landmarks) {
         orderedPersons = bindStablePoseKeys(getOrderedPersons(currentPoseResults), getScreenPoint);
         const activeKeys = new Set(orderedPersons.map((p) => p.key));
-        for (const { lm, key } of orderedPersons) {
-            poseLastSeenMsByKey.set(key, nowTime);
-            const bucket = updateHandsFromPose(lm, getScreenPoint, key, nowTime);
-            if (bucket) activeBuckets.push(bucket);
+        for (const k of [...bucketByPoseKey.keys()]) {
+            if (!activeKeys.has(k)) bucketByPoseKey.delete(k);
         }
         for (const k of [...wristSmoothByPoseKey.keys()]) {
-            if (!activeKeys.has(k)) purgeStalePoseKey(k, nowTime);
+            if (!activeKeys.has(k)) wristSmoothByPoseKey.delete(k);
         }
-        for (const k of [...bucketByPoseKey.keys()]) {
-            if (!activeKeys.has(k)) purgeStalePoseKey(k, nowTime);
+        for (const k of [...shoulderWidthByPoseKey.keys()]) {
+            if (!activeKeys.has(k)) shoulderWidthByPoseKey.delete(k);
         }
-    } else if (trackTuning.bucketGraceMs) {
-        for (const [key, graceUntil] of bucketGraceByPoseKey) {
-            const bucket = bucketByPoseKey.get(key);
-            if (bucket && nowTime < graceUntil) activeBuckets.push(bucket);
-            else purgeStalePoseKey(key, nowTime);
+        for (const k of [...bucketDisplayByPoseKey.keys()]) {
+            if (!activeKeys.has(k)) bucketDisplayByPoseKey.delete(k);
+        }
+
+        for (const { lm, key } of orderedPersons) {
+            const bucket = updateHandsFromPose(lm, getScreenPoint, key);
+            if (bucket) activeBuckets.push(bucket);
         }
     } else {
         bucketByPoseKey.clear();
