@@ -61,7 +61,7 @@ canvas {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  padding: 2rem;
+  padding: clamp(0.75rem, 3vw, 2rem);
 }
 
 #hud-game {
@@ -83,8 +83,9 @@ canvas {
 }
 
 #score-display {
-  font-size: 3rem;
+  font-size: clamp(1.25rem, 5vw, 3rem);
   font-weight: 900;
+  margin: 0;
   text-shadow: 0 0 10px var(--neon-cyan), 0 0 20px var(--neon-cyan);
   pointer-events: none;
 }
