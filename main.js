@@ -591,13 +591,13 @@ function buildTrackTuning() {
         shoulderSmoothAlpha: SHOULDER_SMOOTH_ALPHA,
         wristTeleportPx: WRIST_TELEPORT_PX,
         wristTeleportMul: 0.045,
-        wristMinVisibility: GAME_CFG.wristMinVisibility,
+        wristMinVisibility: mobile ? 0.3 : GAME_CFG.wristMinVisibility,
         maxCanvasLongEdge: mobile ? 960 : 1280,
         minPoseDetectionConfidence: 0.5,
-        minTrackingConfidence: 0.5,
-        minPosePresenceConfidence: 0.5,
+        minTrackingConfidence: mobile ? 0.3 : 0.5,
+        minPosePresenceConfidence: mobile ? 0.3 : 0.5,
         resizeDebounceMs: mobile ? 220 : 110,
-        bucketGraceMs: mobile ? 280 : 0
+        bucketGraceMs: mobile ? 600 : 0
     };
 }
 
