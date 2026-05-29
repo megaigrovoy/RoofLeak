@@ -1157,14 +1157,24 @@ async function createPoseLandmarkerInstance() {
         minPosePresenceConfidence: trackTuning.minPosePresenceConfidence
     });
 
-    try {
-        poseLandmarker = await PoseLandmarker.createFromOptions(vision, poseOpts('GPU'));
-        mediapipePoseDelegate = 'GPU';
-    } catch (e) {
-        console.warn('PoseLandmarker GPU failed, CPU:', e);
-        poseLandmarker = await PoseLandmarker.createFromOptions(vision, poseOpts('CPU'));
-        mediapipePoseDelegate = 'CPU';
+    // На Android GPU-делегат (через WebGL-текстуру видео) часто загружает кадр
+    // некорректно — модель нестабильно определяет стороны тела, точки рук дрожат и
+    // путаются местами. CPU-путь читает пиксели детерминированно и работает корректно.
+    // На ПК/iPad GPU стабилен и быстрее, поэтому там он в приоритете.
+    const delegateOrder = trackTuning.mobile ? ['CPU', 'GPU'] : ['GPU', 'CPU'];
+    let lastErr = null;
+    for (const delegate of delegateOrder) {
+        try {
+            poseLandmarker = await PoseLandmarker.createFromOptions(vision, poseOpts(delegate));
+            mediapipePoseDelegate = delegate;
+            lastErr = null;
+            break;
+        } catch (e) {
+            lastErr = e;
+            console.warn(`PoseLandmarker ${delegate} delegate failed:`, e);
+        }
     }
+    if (lastErr) throw lastErr;
     console.info(`[RoofLeak] pose delegate: ${mediapipePoseDelegate}, numPoses=${np}, mobile=${trackTuning.mobile}`);
 }
 
