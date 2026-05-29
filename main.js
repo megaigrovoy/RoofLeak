@@ -1156,37 +1156,7 @@ let gameLayout = { w: 800, h: 600, minSide: 600 };
 
 let loggedCanvasBufferCap = false;
 
-let poseInputCanvas = null;
-let poseInputCtx = null;
-let loggedPoseInput = false;
 let poseDetectTsMs = 0;
-
-/**
- * На Android Chrome GPU-загрузка кадра в MediaPipe может игнорировать поворот
- * дисплея, из-за чего ландмарки повёрнуты/смещены относительно отрисовки.
- * Копия кадра через 2D-канвас всегда имеет ту же ориентацию, что и наш drawImage,
- * поэтому координаты совпадают. Используется только на мобильных.
- */
-function getPoseInputSource() {
-    if (!trackTuning.mobile) return video;
-    const vw = video.videoWidth;
-    const vh = video.videoHeight;
-    if (!vw || !vh) return video;
-    if (!poseInputCanvas) {
-        poseInputCanvas = document.createElement('canvas');
-        poseInputCtx = poseInputCanvas.getContext('2d', { alpha: false, desynchronized: true });
-    }
-    if (poseInputCanvas.width !== vw || poseInputCanvas.height !== vh) {
-        poseInputCanvas.width = vw;
-        poseInputCanvas.height = vh;
-    }
-    poseInputCtx.drawImage(video, 0, 0, vw, vh);
-    if (!loggedPoseInput) {
-        loggedPoseInput = true;
-        console.info(`[RoofLeak] pose input via 2D canvas ${vw}×${vh} (mobile orientation fix)`);
-    }
-    return poseInputCanvas;
-}
 
 function readViewportSize() {
     const vv = window.visualViewport;
@@ -1678,8 +1648,16 @@ function computeBucket(leftWrist, rightWrist, shoulderW, poseKey, nowMs) {
     const width = shoulderW * GAME_CFG.bucketShoulderMul * vesselMul;
     const height = getVesselDisplayHeight(width, isMug);
 
-    const dx = rightWrist.x - leftWrist.x;
-    const dy = rightWrist.y - leftWrist.y;
+    let dx = rightWrist.x - leftWrist.x;
+    let dy = rightWrist.y - leftWrist.y;
+    // MediaPipe иногда меняет местами левую/правую стороны тела (особенно на Android),
+    // из-за чего запястья обмениваются значениями и ведро переворачивается на 180°.
+    // Ориентация ведра не должна зависеть от порядка запястий: ведро всегда висит вниз.
+    // Приводим вектор между запястьями к направлению +x, угол остаётся в [-π/2, π/2].
+    if (dx < 0) {
+        dx = -dx;
+        dy = -dy;
+    }
     const angle = Math.atan2(dy, dx) + BUCKET_ANGLE_FUDGE;
     const catchHalfW = width * 0.44;
     const catchBottomY = topY + height * 0.38;
@@ -2046,8 +2024,7 @@ function gameLoop(nowTime) {
         const rawTsMs = Number.isFinite(video.currentTime) ? video.currentTime * 1000 : startTimeMs;
         poseDetectTsMs = Math.max(poseDetectTsMs + 1, rawTsMs);
         try {
-            const poseInput = getPoseInputSource();
-            const pRes = poseLandmarker.detectForVideo(poseInput, poseDetectTsMs);
+            const pRes = poseLandmarker.detectForVideo(video, poseDetectTsMs);
             if (pRes) currentPoseResults = pRes;
         } catch (err) {
             console.warn('PoseLandmarker detectForVideo:', err);
