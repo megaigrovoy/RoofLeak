@@ -1156,6 +1156,38 @@ let gameLayout = { w: 800, h: 600, minSide: 600 };
 
 let loggedCanvasBufferCap = false;
 
+let poseInputCanvas = null;
+let poseInputCtx = null;
+let loggedPoseInput = false;
+let poseDetectTsMs = 0;
+
+/**
+ * На Android Chrome GPU-загрузка кадра в MediaPipe может игнорировать поворот
+ * дисплея, из-за чего ландмарки повёрнуты/смещены относительно отрисовки.
+ * Копия кадра через 2D-канвас всегда имеет ту же ориентацию, что и наш drawImage,
+ * поэтому координаты совпадают. Используется только на мобильных.
+ */
+function getPoseInputSource() {
+    if (!trackTuning.mobile) return video;
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    if (!vw || !vh) return video;
+    if (!poseInputCanvas) {
+        poseInputCanvas = document.createElement('canvas');
+        poseInputCtx = poseInputCanvas.getContext('2d', { alpha: false, desynchronized: true });
+    }
+    if (poseInputCanvas.width !== vw || poseInputCanvas.height !== vh) {
+        poseInputCanvas.width = vw;
+        poseInputCanvas.height = vh;
+    }
+    poseInputCtx.drawImage(video, 0, 0, vw, vh);
+    if (!loggedPoseInput) {
+        loggedPoseInput = true;
+        console.info(`[RoofLeak] pose input via 2D canvas ${vw}×${vh} (mobile orientation fix)`);
+    }
+    return poseInputCanvas;
+}
+
 function readViewportSize() {
     const vv = window.visualViewport;
     const w = Math.max(1, Math.floor(vv?.width ?? window.innerWidth));
@@ -2011,9 +2043,11 @@ function gameLoop(nowTime) {
 
     if (lastVideoTime !== video.currentTime) {
         lastVideoTime = video.currentTime;
-        const frameTsMs = Number.isFinite(video.currentTime) ? video.currentTime * 1000 : startTimeMs;
+        const rawTsMs = Number.isFinite(video.currentTime) ? video.currentTime * 1000 : startTimeMs;
+        poseDetectTsMs = Math.max(poseDetectTsMs + 1, rawTsMs);
         try {
-            const pRes = poseLandmarker.detectForVideo(video, frameTsMs);
+            const poseInput = getPoseInputSource();
+            const pRes = poseLandmarker.detectForVideo(poseInput, poseDetectTsMs);
             if (pRes) currentPoseResults = pRes;
         } catch (err) {
             console.warn('PoseLandmarker detectForVideo:', err);
