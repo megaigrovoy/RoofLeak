@@ -676,6 +676,12 @@ function lerpAngle(from, to, a) {
     return from + d * a;
 }
 
+function angularDistance(a, b) {
+    let d = Math.abs(a - b) % (Math.PI * 2);
+    if (d > Math.PI) d = Math.PI * 2 - d;
+    return d;
+}
+
 function smoothBucketDisplay(poseKey, raw) {
     const a = trackTuning.bucketDisplaySmoothAlpha;
     let st = bucketDisplayByPoseKey.get(poseKey);
@@ -687,7 +693,17 @@ function smoothBucketDisplay(poseKey, raw) {
 
     st.cx = st.cx * (1 - a) + raw.cx * a;
     st.topY = st.topY * (1 - a) + raw.topY * a;
-    st.angle = lerpAngle(st.angle, raw.angle, a);
+
+    // MediaPipe временами меняет местами левую/правую стороны тела (особенно на Android):
+    // запястья обмениваются значениями, и угол прыгает на 180°. Вектор между запястьями
+    // не направленный, поэтому raw.angle и raw.angle+π — это одна и та же линия.
+    // Выбираем тот вариант, что ближе к уже установленной ориентации, — ведро не переворачивается.
+    let targetAngle = raw.angle;
+    const flipped = raw.angle + Math.PI;
+    if (angularDistance(flipped, st.angle) < angularDistance(targetAngle, st.angle)) {
+        targetAngle = flipped;
+    }
+    st.angle = lerpAngle(st.angle, targetAngle, a);
 
     const catchBottomY = st.topY + raw.height * 0.38;
     return {
@@ -1648,16 +1664,8 @@ function computeBucket(leftWrist, rightWrist, shoulderW, poseKey, nowMs) {
     const width = shoulderW * GAME_CFG.bucketShoulderMul * vesselMul;
     const height = getVesselDisplayHeight(width, isMug);
 
-    let dx = rightWrist.x - leftWrist.x;
-    let dy = rightWrist.y - leftWrist.y;
-    // MediaPipe иногда меняет местами левую/правую стороны тела (особенно на Android),
-    // из-за чего запястья обмениваются значениями и ведро переворачивается на 180°.
-    // Ориентация ведра не должна зависеть от порядка запястий: ведро всегда висит вниз.
-    // Приводим вектор между запястьями к направлению +x, угол остаётся в [-π/2, π/2].
-    if (dx < 0) {
-        dx = -dx;
-        dy = -dy;
-    }
+    const dx = rightWrist.x - leftWrist.x;
+    const dy = rightWrist.y - leftWrist.y;
     const angle = Math.atan2(dy, dx) + BUCKET_ANGLE_FUDGE;
     const catchHalfW = width * 0.44;
     const catchBottomY = topY + height * 0.38;
@@ -2019,13 +2027,17 @@ function gameLoop(nowTime) {
 
     const startTimeMs = performance.now();
 
+    let poseFrameIsNew = false;
     if (lastVideoTime !== video.currentTime) {
         lastVideoTime = video.currentTime;
         const rawTsMs = Number.isFinite(video.currentTime) ? video.currentTime * 1000 : startTimeMs;
         poseDetectTsMs = Math.max(poseDetectTsMs + 1, rawTsMs);
         try {
             const pRes = poseLandmarker.detectForVideo(video, poseDetectTsMs);
-            if (pRes) currentPoseResults = pRes;
+            if (pRes) {
+                currentPoseResults = pRes;
+                poseFrameIsNew = true;
+            }
         } catch (err) {
             console.warn('PoseLandmarker detectForVideo:', err);
         }
@@ -2068,8 +2080,13 @@ function gameLoop(nowTime) {
         orderedPersons = bindStablePoseKeys(getOrderedPersons(currentPoseResults), getScreenPoint);
         const activeKeys = new Set(orderedPersons.map((p) => p.key));
 
+        // Сглаживание/перерасчёт ведра — только на новом кадре камеры (~30 fps),
+        // иначе на экранах 120 Гц сглаживание прокручивается лишние разы и дрожит.
+        // На кадрах без обновления переиспользуем последнее положение ведра.
         for (const { lm, key } of orderedPersons) {
-            const bucket = updateHandsFromPose(lm, getScreenPoint, key);
+            const bucket = poseFrameIsNew
+                ? updateHandsFromPose(lm, getScreenPoint, key)
+                : bucketByPoseKey.get(key) ?? null;
             if (bucket) activeBuckets.push(bucket);
         }
 
