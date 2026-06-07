@@ -541,14 +541,18 @@ const mugModeUntilByPoseKey = new Map();
 const POWERUP_DEFS = {
     slowmo: { color: '#9b8cff' },
     magnet: { color: '#ffa83d' },
-    big: { color: '#48dc84' }
+    big: { color: '#48dc84' },
+    drain: { color: '#33d6ff' }
 };
-const POWERUP_TYPE_LIST = Object.keys(POWERUP_DEFS);
+/** Типы, выпадающие случайно (drain выпадает только за серию поимок) */
+const POWERUP_RANDOM_TYPES = ['slowmo', 'magnet', 'big'];
 let powerups = [];
 /** type → timestamp ms, до которого эффект активен */
 const powerupUntil = { slowmo: 0, magnet: 0, big: 0 };
 let lastPowerupSpawnTime = 0;
 let nextPowerupSpawnDelay = 12000;
+/** Сколько капель поймано подряд без промаха */
+let catchStreak = 0;
 
 function isPowerupActive(type, nowMs) {
     return powerupUntil[type] > nowMs;
@@ -565,12 +569,15 @@ function randPowerupDelay() {
 
 function resetPowerups() {
     powerups = [];
-    for (const k of POWERUP_TYPE_LIST) powerupUntil[k] = 0;
+    catchStreak = 0;
+    for (const k of Object.keys(powerupUntil)) powerupUntil[k] = 0;
 }
 
-function spawnPowerup() {
-    if (powerups.length >= 2) return;
-    const type = POWERUP_TYPE_LIST[Math.floor(Math.random() * POWERUP_TYPE_LIST.length)];
+function spawnPowerup(forcedType) {
+    // Случайные бонусы ограничены двумя на экране; «слив воды» (за серию) выпадает всегда.
+    if (!forcedType && powerups.length >= 2) return;
+    const type =
+        forcedType ?? POWERUP_RANDOM_TYPES[Math.floor(Math.random() * POWERUP_RANDOM_TYPES.length)];
     const { minSide, w } = gameLayout;
     const r = minSide * GAME_CFG.powerupRadiusMul;
     const pad = w * 0.12;
@@ -582,6 +589,13 @@ function spawnPowerup() {
         r,
         spin: Math.random() * Math.PI * 2
     });
+}
+
+function registerCatchStreak() {
+    catchStreak += 1;
+    if (catchStreak > 0 && catchStreak % GAME_CFG.streakForBonus === 0) {
+        spawnPowerup('drain');
+    }
 }
 
 const GAME_CFG = {
@@ -624,7 +638,11 @@ const GAME_CFG = {
     /** Во сколько раз шире ведро при «Большом ведре» */
     bigBucketMul: 1.6,
     /** Сила притяжения капель к ведру при «Магните» (доля сближения за кадр) */
-    magnetStrength: 0.12
+    magnetStrength: 0.12,
+    /** Сколько капель подряд нужно поймать, чтобы выпал бонус «слив воды» */
+    streakForBonus: 30,
+    /** На сколько (доля экрана) бонус «слив воды» опускает уровень воды */
+    drainWaterAmount: 0.1
 };
 
 const WRIST_SMOOTH_ALPHA = 0.24;
@@ -1777,6 +1795,14 @@ function drawPowerupGlyph(ctx, type, cx, cy, s) {
         ctx.moveTo(a, -s * 0.55);
         ctx.lineTo(a, -s * 0.15);
         ctx.stroke();
+    } else if (type === 'drain') {
+        ctx.beginPath();
+        ctx.moveTo(0, -s * 0.85);
+        ctx.lineTo(0, s * 0.55);
+        ctx.moveTo(-s * 0.5, 0);
+        ctx.lineTo(0, s * 0.6);
+        ctx.lineTo(s * 0.5, 0);
+        ctx.stroke();
     }
     ctx.restore();
 }
@@ -1814,7 +1840,7 @@ function drawPowerupItem(ctx, p) {
 }
 
 function drawActivePowerupBadges(ctx, nowMs) {
-    const active = POWERUP_TYPE_LIST.filter((type) => isPowerupActive(type, nowMs));
+    const active = POWERUP_RANDOM_TYPES.filter((type) => isPowerupActive(type, nowMs));
     if (!active.length) return;
 
     const { w, minSide } = gameLayout;
@@ -1877,7 +1903,12 @@ function updatePowerups(dt, nowMs, activeBuckets, floorY) {
         }
 
         if (caught) {
-            activatePowerup(p.type, nowMs);
+            if (p.type === 'drain') {
+                waterLevel = Math.max(0, waterLevel - GAME_CFG.drainWaterAmount);
+                updateHud();
+            } else {
+                activatePowerup(p.type, nowMs);
+            }
             spawnSplash(p.x, p.y, POWERUP_DEFS[p.type]?.color ?? '#fff');
             playCatchSound();
             powerups.splice(i, 1);
@@ -2416,6 +2447,7 @@ function gameLoop(nowTime) {
                 spawnSplash(drop.x, drop.y, '#b87333');
             } else {
                 score += 1;
+                registerCatchStreak();
                 updateHud();
                 spawnSplash(drop.x, drop.y, '#7ec8ff');
                 playCatchSound();
@@ -2427,6 +2459,7 @@ function gameLoop(nowTime) {
         if (drop.y + drop.r >= floorY) {
             drop.dead = true;
             if (drop.kind !== 'red') {
+                catchStreak = 0;
                 waterLevel = Math.min(1, waterLevel + GAME_CFG.waterRisePerMiss);
                 updateHud();
                 playSplashSound();
