@@ -537,6 +537,53 @@ let gameTime = 0;
 /** poseKey → timestamp ms, до которого вместо ведра — кружка */
 const mugModeUntilByPoseKey = new Map();
 
+/** Падающие бонусы и активные эффекты */
+const POWERUP_DEFS = {
+    slowmo: { color: '#9b8cff' },
+    magnet: { color: '#ffa83d' },
+    big: { color: '#48dc84' }
+};
+const POWERUP_TYPE_LIST = Object.keys(POWERUP_DEFS);
+let powerups = [];
+/** type → timestamp ms, до которого эффект активен */
+const powerupUntil = { slowmo: 0, magnet: 0, big: 0 };
+let lastPowerupSpawnTime = 0;
+let nextPowerupSpawnDelay = 12000;
+
+function isPowerupActive(type, nowMs) {
+    return powerupUntil[type] > nowMs;
+}
+
+function activatePowerup(type, nowMs) {
+    powerupUntil[type] = nowMs + GAME_CFG.powerupDurationMs;
+}
+
+function randPowerupDelay() {
+    const { powerupSpawnMinMs, powerupSpawnMaxMs } = GAME_CFG;
+    return powerupSpawnMinMs + Math.random() * (powerupSpawnMaxMs - powerupSpawnMinMs);
+}
+
+function resetPowerups() {
+    powerups = [];
+    for (const k of POWERUP_TYPE_LIST) powerupUntil[k] = 0;
+}
+
+function spawnPowerup() {
+    if (powerups.length >= 2) return;
+    const type = POWERUP_TYPE_LIST[Math.floor(Math.random() * POWERUP_TYPE_LIST.length)];
+    const { minSide, w } = gameLayout;
+    const r = minSide * GAME_CFG.powerupRadiusMul;
+    const pad = w * 0.12;
+    powerups.push({
+        type,
+        x: pad + Math.random() * Math.max(1, w - pad * 2),
+        y: -r,
+        vy: minSide * GAME_CFG.powerupSpeedMul * (0.9 + Math.random() * 0.2),
+        r,
+        spin: Math.random() * Math.PI * 2
+    });
+}
+
 const GAME_CFG = {
     /** Доля высоты экрана — проигрыш при достижении */
     waterGameOverFrac: 0.5,
@@ -564,7 +611,20 @@ const GAME_CFG = {
     /** Ширина ведра как доля расстояния между плечами */
     bucketShoulderMul: 1.1,
     bucketHeightMul: 0.82,
-    shoulderMinPx: 40
+    shoulderMinPx: 40,
+    /** --- Power-ups (бонусы) --- */
+    powerupSpawnMinMs: 8000,
+    powerupSpawnMaxMs: 15000,
+    /** Сколько длится эффект бонуса */
+    powerupDurationMs: 7000,
+    powerupRadiusMul: 0.04,
+    powerupSpeedMul: 0.0042,
+    /** Множитель скорости капель при «Замедлении» */
+    slowmoFactor: 0.42,
+    /** Во сколько раз шире ведро при «Большом ведре» */
+    bigBucketMul: 1.6,
+    /** Сила притяжения капель к ведру при «Магните» (доля сближения за кадр) */
+    magnetStrength: 0.12
 };
 
 const WRIST_SMOOTH_ALPHA = 0.24;
@@ -936,6 +996,7 @@ function showMainMenu() {
     drops.length = 0;
     particles.length = 0;
     leakSpots.length = 0;
+    resetPowerups();
     resetWristSmoothing();
     updateMugTimerHud([], performance.now());
     canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
@@ -961,6 +1022,9 @@ function startGame() {
     nextSpawnDelay = randSpawnDelay();
     lastRedSpawnTime = performance.now();
     nextRedSpawnDelay = randRedSpawnDelay();
+    lastPowerupSpawnTime = performance.now();
+    nextPowerupSpawnDelay = randPowerupDelay();
+    resetPowerups();
     lastFrameTime = performance.now();
     resetWristSmoothing();
     initLeakSpots();
@@ -1666,12 +1730,173 @@ function spawnSplash(x, y, color) {
     for (let i = 0; i < 8; i++) particles.push(new SplashParticle(x, y, color, 'dot'));
 }
 
+function drawPowerupGlyph(ctx, type, cx, cy, s) {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.strokeStyle = '#ffffff';
+    ctx.fillStyle = '#ffffff';
+    ctx.lineWidth = Math.max(1.4, s * 0.13);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    if (type === 'slowmo') {
+        ctx.beginPath();
+        ctx.arc(0, 0, s * 0.8, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(0, -s * 0.5);
+        ctx.moveTo(0, 0);
+        ctx.lineTo(s * 0.4, s * 0.12);
+        ctx.stroke();
+    } else if (type === 'magnet') {
+        const w = s * 0.62;
+        ctx.beginPath();
+        ctx.arc(0, -s * 0.1, w, Math.PI, 0);
+        ctx.lineWidth = Math.max(2, s * 0.32);
+        ctx.stroke();
+        ctx.lineWidth = Math.max(2, s * 0.32);
+        ctx.beginPath();
+        ctx.moveTo(-w, -s * 0.1);
+        ctx.lineTo(-w, s * 0.6);
+        ctx.moveTo(w, -s * 0.1);
+        ctx.lineTo(w, s * 0.6);
+        ctx.stroke();
+    } else if (type === 'big') {
+        ctx.beginPath();
+        ctx.rect(-s * 0.5, -s * 0.2, s, s * 0.85);
+        ctx.stroke();
+        const a = s * 0.95;
+        ctx.beginPath();
+        ctx.moveTo(-a, -s * 0.55);
+        ctx.lineTo(-a + s * 0.4, -s * 0.55);
+        ctx.moveTo(-a, -s * 0.55);
+        ctx.lineTo(-a, -s * 0.15);
+        ctx.moveTo(a, -s * 0.55);
+        ctx.lineTo(a - s * 0.4, -s * 0.55);
+        ctx.moveTo(a, -s * 0.55);
+        ctx.lineTo(a, -s * 0.15);
+        ctx.stroke();
+    }
+    ctx.restore();
+}
+
+function drawPowerupItem(ctx, p) {
+    const def = POWERUP_DEFS[p.type];
+    const color = def?.color ?? '#ffffff';
+    ctx.save();
+    ctx.translate(p.x, p.y);
+
+    const pulse = 1 + Math.sin(gameTime * 0.18 + p.spin) * 0.06;
+    const r = p.r * pulse;
+
+    const glow = ctx.createRadialGradient(0, 0, r * 0.2, 0, 0, r * 1.5);
+    glow.addColorStop(0, color);
+    glow.addColorStop(0.65, color);
+    glow.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.globalAlpha = 0.9;
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 1.4, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+    ctx.lineWidth = Math.max(1.5, r * 0.1);
+    ctx.stroke();
+
+    drawPowerupGlyph(ctx, p.type, 0, 0, r * 0.55);
+    ctx.restore();
+}
+
+function drawActivePowerupBadges(ctx, nowMs) {
+    const active = POWERUP_TYPE_LIST.filter((type) => isPowerupActive(type, nowMs));
+    if (!active.length) return;
+
+    const { w, minSide } = gameLayout;
+    const r = minSide * 0.032;
+    const gap = r * 2.6;
+    const totalW = (active.length - 1) * gap;
+    let x = w / 2 - totalW / 2;
+    const y = minSide * 0.07;
+
+    for (const type of active) {
+        const def = POWERUP_DEFS[type];
+        const color = def?.color ?? '#fff';
+        const left = Math.max(0, powerupUntil[type] - nowMs);
+        const frac = Math.min(1, left / GAME_CFG.powerupDurationMs);
+
+        ctx.save();
+        ctx.translate(x, y);
+
+        ctx.fillStyle = 'rgba(0,0,0,0.45)';
+        ctx.beginPath();
+        ctx.arc(0, 0, r * 1.15, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.fill();
+
+        drawPowerupGlyph(ctx, type, 0, 0, r * 0.55);
+
+        ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+        ctx.lineWidth = Math.max(2, r * 0.18);
+        ctx.beginPath();
+        ctx.arc(0, 0, r * 1.3, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * frac);
+        ctx.stroke();
+
+        ctx.restore();
+        x += gap;
+    }
+}
+
+function updatePowerups(dt, nowMs, activeBuckets, floorY) {
+    if (nowMs - lastPowerupSpawnTime >= nextPowerupSpawnDelay) {
+        spawnPowerup();
+        lastPowerupSpawnTime = nowMs;
+        nextPowerupSpawnDelay = randPowerupDelay();
+    }
+
+    for (let i = powerups.length - 1; i >= 0; i--) {
+        const p = powerups[i];
+        p.y += p.vy * dt;
+        p.spin += dt * 0.04;
+
+        let caught = false;
+        for (const bucket of activeBuckets) {
+            if (dropCaughtByBucket(p, bucket)) {
+                caught = true;
+                break;
+            }
+        }
+
+        if (caught) {
+            activatePowerup(p.type, nowMs);
+            spawnSplash(p.x, p.y, POWERUP_DEFS[p.type]?.color ?? '#fff');
+            playCatchSound();
+            powerups.splice(i, 1);
+            continue;
+        }
+
+        if (p.y - p.r > floorY || p.y > gameLayout.h + p.r * 2) {
+            powerups.splice(i, 1);
+        }
+    }
+}
+
 function computeBucket(leftWrist, rightWrist, shoulderW, poseKey, nowMs) {
     const cx = (leftWrist.x + rightWrist.x) * 0.5;
     const topY = (leftWrist.y + rightWrist.y) * 0.5;
     const isMug = isMugMode(poseKey, nowMs);
     const vesselMul = isMug ? GAME_CFG.mugSizeMul : 1;
-    const width = shoulderW * GAME_CFG.bucketShoulderMul * vesselMul;
+    const bigMul = isPowerupActive('big', nowMs) ? GAME_CFG.bigBucketMul : 1;
+    const width = shoulderW * GAME_CFG.bucketShoulderMul * vesselMul * bigMul;
     const height = getVesselDisplayHeight(width, isMug);
 
     const dx = rightWrist.x - leftWrist.x;
@@ -2151,9 +2376,30 @@ function gameLoop(nowTime) {
 
     const floorY = gameLayout.h - waterLevel * gameLayout.h;
 
+    const slowmoActive = isPowerupActive('slowmo', nowTime);
+    const magnetActive = isPowerupActive('magnet', nowTime);
+    const slowFactor = slowmoActive ? GAME_CFG.slowmoFactor : 1;
+
+    updatePowerups(dt, nowTime, activeBuckets, floorY);
+
     for (let i = drops.length - 1; i >= 0; i--) {
         const drop = drops[i];
-        drop.y += drop.vy * dt;
+        drop.y += drop.vy * dt * slowFactor;
+
+        if (magnetActive && activeBuckets.length) {
+            let nearestCx = null;
+            let nearestD = Infinity;
+            for (const b of activeBuckets) {
+                const d = Math.abs(b.cx - drop.x);
+                if (d < nearestD) {
+                    nearestD = d;
+                    nearestCx = b.cx;
+                }
+            }
+            if (nearestCx != null) {
+                drop.x += (nearestCx - drop.x) * Math.min(1, GAME_CFG.magnetStrength * dt);
+            }
+        }
 
         let catcher = null;
         for (const bucket of activeBuckets) {
@@ -2203,12 +2449,18 @@ function gameLoop(nowTime) {
         drawDrop(canvasCtx, drop);
     }
 
+    for (const p of powerups) {
+        drawPowerupItem(canvasCtx, p);
+    }
+
     for (const bucket of activeBuckets) {
         const pi = playerIndexFromPoseKey(bucket.poseKey);
         const color = PLAYER_COLORS[pi] ?? PLAYER_COLORS[0];
         drawBucket(canvasCtx, bucket);
         drawWristMarkers(canvasCtx, bucket, color);
     }
+
+    drawActivePowerupBadges(canvasCtx, nowTime);
 
     for (let i = particles.length - 1; i >= 0; i--) {
         const p = particles[i];
