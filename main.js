@@ -287,16 +287,30 @@ const GAME_BG_GLOB = import.meta.glob('./src/assets/sounds/OST/*.mp3', {
 });
 const GAME_BG_TRACKS = Object.values(GAME_BG_GLOB);
 
-const VOICE_RU_GLOB = import.meta.glob('./src/assets/sounds/voice/ru/*.MP3', {
-    eager: true,
-    query: '?url',
-    import: 'default'
-});
-const VOICE_EN_GLOB = import.meta.glob('./src/assets/sounds/voice/en/*.MP3', {
-    eager: true,
-    query: '?url',
-    import: 'default'
-});
+const VOICE_RU_GLOB = {
+    ...import.meta.glob('./src/assets/sounds/voice/ru/*.MP3', {
+        eager: true,
+        query: '?url',
+        import: 'default'
+    }),
+    ...import.meta.glob('./src/assets/sounds/voice/ru/*.mp3', {
+        eager: true,
+        query: '?url',
+        import: 'default'
+    })
+};
+const VOICE_EN_GLOB = {
+    ...import.meta.glob('./src/assets/sounds/voice/en/*.MP3', {
+        eager: true,
+        query: '?url',
+        import: 'default'
+    }),
+    ...import.meta.glob('./src/assets/sounds/voice/en/*.mp3', {
+        eager: true,
+        query: '?url',
+        import: 'default'
+    })
+};
 
 function buildVoiceUrlMap(globModules) {
     const map = {};
@@ -630,8 +644,9 @@ function speakVoice(clipId, { force = false, fallbackText = '' } = {}) {
         voiceAudio.pause();
         voiceAudio.src = url;
         voiceAudio.volume = BASE_VOICE_VOL * masterVolume;
+        voiceAudio.onended = null;
         void voiceAudio.play().catch(() => {
-            if (fallbackText) speakTts(fallbackText, { force });
+            if (fallbackText) speakTts(fallbackText, { force: true });
         });
         return;
     }
@@ -2530,10 +2545,12 @@ function updatePowerups(dt, nowMs, activeBuckets, floorY) {
                     speed: 0.7,
                     decay: 0.011
                 });
-                speakKey(popup.key);
+                // force: бонусы редкие — голос не должен теряться из-за лимита 2.5 с
+                speakKey(popup.key, { force: true });
             }
             spawnSplash(p.x, p.y, POWERUP_DEFS[p.type]?.color ?? '#fff');
-            playPowerupFanfare();
+            // фанфары чуть позже, чтобы короткая фраза («Магнит!») успела начаться
+            setTimeout(() => playPowerupFanfare(), 180);
             powerups.splice(i, 1);
             continue;
         }
