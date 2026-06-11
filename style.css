@@ -93,19 +93,113 @@ canvas {
 .game-over-overlay {
   order: -1;
   width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
   text-align: center;
-  font-weight: 900;
-  font-size: clamp(1.75rem, 8vw, 4rem);
-  letter-spacing: 0.12em;
-  color: #ff5252;
-  text-shadow:
-    0 0 12px rgba(255, 82, 82, 0.95),
-    0 0 28px rgba(0, 243, 255, 0.45);
   pointer-events: none;
 }
 
 .game-over-overlay.is-hidden {
   display: none;
+}
+
+.game-over-title {
+  font-weight: 900;
+  font-size: clamp(2rem, 9vw, 4.25rem);
+  letter-spacing: 0.06em;
+  color: #ffd95e;
+  text-shadow:
+    0 0 14px rgba(255, 217, 94, 0.85),
+    0 2px 0 rgba(0, 0, 0, 0.45);
+}
+
+.game-over-stars {
+  display: flex;
+  gap: 0.35rem;
+  font-size: clamp(2rem, 9vw, 3.6rem);
+  line-height: 1;
+}
+
+.game-over-star {
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.5));
+  animation: star-pop 0.5s ease-out backwards;
+}
+
+.game-over-star:nth-child(2) { animation-delay: 0.2s; }
+.game-over-star:nth-child(3) { animation-delay: 0.4s; }
+
+.game-over-star.is-dim {
+  filter: grayscale(1) opacity(0.35);
+}
+
+@keyframes star-pop {
+  from { transform: scale(0); }
+  60% { transform: scale(1.35); }
+  to { transform: scale(1); }
+}
+
+.game-over-caught {
+  font-weight: 900;
+  font-size: clamp(1.6rem, 7vw, 3rem);
+  color: #ffffff;
+  text-shadow: 0 0 10px rgba(126, 200, 255, 0.8);
+}
+
+.game-over-best {
+  font-weight: 700;
+  font-size: clamp(0.95rem, 3.5vw, 1.4rem);
+  color: rgba(255, 255, 255, 0.85);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.5);
+}
+
+.game-over-best.is-new-best {
+  color: #7dffa9;
+  text-shadow: 0 0 14px rgba(125, 255, 169, 0.9);
+  animation: new-best-pulse 0.9s ease-in-out infinite alternate;
+}
+
+@keyframes new-best-pulse {
+  from { transform: scale(1); }
+  to { transform: scale(1.12); }
+}
+
+.game-over-again {
+  pointer-events: auto;
+  margin-top: 0.6rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5em;
+  padding: 0.55em 1.8em;
+  font-family: inherit;
+  font-weight: 900;
+  font-size: clamp(1.1rem, 4.5vw, 1.6rem);
+  color: #2b1c10;
+  background: linear-gradient(180deg, #ffd95e, #f0a93c);
+  border: 3px solid rgba(120, 72, 24, 0.85);
+  border-radius: 999px;
+  cursor: pointer;
+  box-shadow:
+    0 4px 0 rgba(120, 72, 24, 0.85),
+    0 8px 22px rgba(0, 0, 0, 0.4);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.game-over-again-icon {
+  font-size: 1.5em;
+  line-height: 1;
+}
+
+.game-over-again:hover {
+  transform: translateY(-2px) scale(1.04);
+}
+
+.game-over-again:active {
+  transform: translateY(2px);
+  box-shadow:
+    0 2px 0 rgba(120, 72, 24, 0.85),
+    0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
 .hud-row {

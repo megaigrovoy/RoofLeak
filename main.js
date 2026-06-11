@@ -7,6 +7,7 @@ const STORAGE_MUSIC_OFF = 'roof-leak-music-off';
 const STORAGE_PLAYER_COUNT = 'roof-leak-player-count';
 const STORAGE_VOLUME = 'roof-leak-volume';
 const STORAGE_LANG = 'roof-leak-lang';
+const STORAGE_BEST_SCORE = 'roof-leak-best-score';
 
 const I18N = {
     ru: {
@@ -41,6 +42,25 @@ const I18N = {
         mugPlayer: 'Игрок {n} · кружка',
         gameOver: 'GAME OVER · поймано {n}',
         loadingModels: 'Загрузка моделей…',
+        howToSpread: 'Разведи руки в стороны —',
+        howToBucket: 'появится ведро!',
+        howToCatch: 'Лови капли с потолка',
+        popupSlowmo: 'Замедление!',
+        popupMagnet: 'Магнит!',
+        popupBig: 'Большое ведро!',
+        popupDrain: 'Вода уходит!',
+        popupMug: 'Ой, кружка…',
+        praise5: 'Хорошо!',
+        praise10: 'Супер!',
+        praise20: 'Класс!',
+        praiseBig: 'Невероятно!',
+        streakLabel: 'Серия: {n}',
+        waterWarning: 'Осторожно, вода поднимается!',
+        resultTitle: 'Молодец!',
+        resultCaught: 'Поймано капель: {n}',
+        resultBest: 'Рекорд: {n}',
+        resultNewBest: 'Новый рекорд!',
+        playAgain: 'Ещё раз!',
         startErrorTitle: 'Не удалось запустить игру.',
         startErrorHintDefault:
             'Откройте консоль браузера (F12 → Console) и при необходимости пришлите текст ошибки.',
@@ -82,6 +102,25 @@ const I18N = {
         mugPlayer: 'Player {n} · mug',
         gameOver: 'GAME OVER · caught {n}',
         loadingModels: 'Loading models…',
+        howToSpread: 'Spread your arms wide —',
+        howToBucket: 'a bucket will appear!',
+        howToCatch: 'Catch drops from the ceiling',
+        popupSlowmo: 'Slow motion!',
+        popupMagnet: 'Magnet!',
+        popupBig: 'Big bucket!',
+        popupDrain: 'Water drains!',
+        popupMug: 'Oops, a mug…',
+        praise5: 'Nice!',
+        praise10: 'Super!',
+        praise20: 'Awesome!',
+        praiseBig: 'Incredible!',
+        streakLabel: 'Streak: {n}',
+        waterWarning: 'Watch out, water is rising!',
+        resultTitle: 'Well done!',
+        resultCaught: 'Drops caught: {n}',
+        resultBest: 'Best: {n}',
+        resultNewBest: 'New record!',
+        playAgain: 'Play again!',
         startErrorTitle: 'Failed to start the game.',
         startErrorHintDefault: 'Open the browser console (F12 → Console) and share the error if needed.',
         startErrorCameraBlocked:
@@ -111,6 +150,7 @@ const BASE_MENU_MUSIC_VOL = 0.52;
 const BASE_GAME_MUSIC_VOL = 0.46;
 const BASE_SFX_CATCH_VOL = 0.72;
 const BASE_SFX_SPLASH_VOL = 0.68;
+const BASE_VOICE_VOL = 0.92;
 
 const DEBUG_FRAME_PERF =
     typeof location !== 'undefined' && new URLSearchParams(location.search).get('perf') === '1';
@@ -132,6 +172,8 @@ const PLAYER_COLORS = ['#00f3ff', '#ff00ea'];
 const BUCKET_IMG_URL = new URL('./src/assets/img/bucket.png', import.meta.url).href;
 const CUP_IMG_URL = new URL('./src/assets/img/cup.png', import.meta.url).href;
 const MENU_HERO_IMG_URL = new URL('./src/assets/img/menu-hero.png', import.meta.url).href;
+const HAND_L_IMG_URL = new URL('./src/assets/img/l hand.png', import.meta.url).href;
+const HAND_R_IMG_URL = new URL('./src/assets/img/r hand.png', import.meta.url).href;
 const BUCKET_PIVOT_X_FRAC = 0.5;
 /** Точка на ободе ведра в PNG (чуть ниже ручки) */
 const BUCKET_PIVOT_Y_FRAC = 0.16;
@@ -141,8 +183,12 @@ const BUCKET_ANGLE_FUDGE = 0;
 
 const bucketSprite = new Image();
 const cupSprite = new Image();
+const handLSprite = new Image();
+const handRSprite = new Image();
 let bucketSpriteReady = false;
 let cupSpriteReady = false;
+let handLSpriteReady = false;
+let handRSpriteReady = false;
 
 function loadSpriteImage(img, url, label) {
     return new Promise((resolve) => {
@@ -167,8 +213,19 @@ function preloadCupSprite() {
     });
 }
 
+function preloadHandSprites() {
+    return Promise.all([
+        loadSpriteImage(handLSprite, HAND_L_IMG_URL, 'l hand.png').then((ok) => {
+            handLSpriteReady = ok;
+        }),
+        loadSpriteImage(handRSprite, HAND_R_IMG_URL, 'r hand.png').then((ok) => {
+            handRSpriteReady = ok;
+        })
+    ]);
+}
+
 function preloadSprites() {
-    return Promise.all([preloadBucketSprite(), preloadCupSprite()]);
+    return Promise.all([preloadBucketSprite(), preloadCupSprite(), preloadHandSprites()]);
 }
 
 function getVesselDisplayHeight(width, isMug) {
@@ -195,6 +252,7 @@ function persistMasterVolume() {
 function applyVolumeToPlayingAudio() {
     if (menuMusicAudio) menuMusicAudio.volume = BASE_MENU_MUSIC_VOL * masterVolume;
     if (gameMusicAudio) gameMusicAudio.volume = BASE_GAME_MUSIC_VOL * masterVolume;
+    if (voiceAudio) voiceAudio.volume = BASE_VOICE_VOL * masterVolume;
 }
 
 function setMasterVolume(next) {
@@ -228,6 +286,47 @@ const GAME_BG_GLOB = import.meta.glob('./src/assets/sounds/OST/*.mp3', {
     import: 'default'
 });
 const GAME_BG_TRACKS = Object.values(GAME_BG_GLOB);
+
+const VOICE_RU_GLOB = import.meta.glob('./src/assets/sounds/voice/ru/*.MP3', {
+    eager: true,
+    query: '?url',
+    import: 'default'
+});
+const VOICE_EN_GLOB = import.meta.glob('./src/assets/sounds/voice/en/*.MP3', {
+    eager: true,
+    query: '?url',
+    import: 'default'
+});
+
+function buildVoiceUrlMap(globModules) {
+    const map = {};
+    for (const [path, url] of Object.entries(globModules)) {
+        const file = path.split('/').pop() ?? '';
+        const id = file.replace(/\.(mp3|MP3)$/i, '');
+        if (id) map[id] = url;
+    }
+    return map;
+}
+
+const voiceUrlByLang = {
+    ru: buildVoiceUrlMap(VOICE_RU_GLOB),
+    en: buildVoiceUrlMap(VOICE_EN_GLOB)
+};
+
+/** i18n-ключ → имя mp3-файла (без расширения) */
+const VOICE_CLIP_BY_I18N_KEY = {
+    praise5: 'praise-5',
+    praise10: 'praise-10',
+    praise20: 'praise-20',
+    praiseBig: 'praise-30',
+    popupSlowmo: 'powerup-slowmo',
+    popupMagnet: 'powerup-magnet',
+    popupBig: 'powerup-big',
+    popupDrain: 'powerup-drain',
+    popupMug: 'mug-oops',
+    waterWarning: 'water-warning',
+    resultTitle: 'result-title'
+};
 
 const sfxAudioBufferByUrl = new Map();
 const sfxAudioBufferPromiseByUrl = new Map();
@@ -336,6 +435,9 @@ function warmSfxAudioBuffersYielding() {
 function preloadGameAudio() {
     if (soundEffectsEnabled) {
         for (const u of [SFX_CATCH_URL, SFX_SPLASH_URL]) preloadHtmlAudioUrl(u);
+        for (const map of Object.values(voiceUrlByLang)) {
+            for (const u of Object.values(map)) preloadHtmlAudioUrl(u);
+        }
         warmSfxAudioBuffersYielding();
     }
     if (musicEnabled) {
@@ -487,6 +589,134 @@ function playCatchSound() {
     playOneShotSfx(SFX_CATCH_URL, BASE_SFX_CATCH_VOL);
 }
 
+/* ---------- Голосовые подсказки (записанные mp3, fallback — синтез речи) ---------- */
+
+const speechAvailable = typeof window !== 'undefined' && 'speechSynthesis' in window;
+let lastSpeechAtMs = 0;
+let voiceAudio = null;
+
+function getVoiceUrl(clipId) {
+    if (!clipId) return null;
+    return voiceUrlByLang[uiLang]?.[clipId] ?? voiceUrlByLang.ru?.[clipId] ?? null;
+}
+
+function speakTts(text, { force = false, rate = 0.95 } = {}) {
+    if (!speechAvailable || !soundEffectsEnabled || backgroundSuspended || !text) return;
+    const now = performance.now();
+    if (!force && now - lastSpeechAtMs < 2500) return;
+    lastSpeechAtMs = now;
+    try {
+        window.speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = uiLang === 'ru' ? 'ru-RU' : 'en-US';
+        u.volume = Math.max(0, Math.min(1, masterVolume));
+        u.rate = rate;
+        u.pitch = 1.15;
+        window.speechSynthesis.speak(u);
+    } catch (_) {}
+}
+
+/** clipId — имя файла без расширения, например howto-spread-bucket */
+function speakVoice(clipId, { force = false, fallbackText = '' } = {}) {
+    if (!soundEffectsEnabled || backgroundSuspended) return;
+    const now = performance.now();
+    if (!force && now - lastSpeechAtMs < 2500) return;
+
+    const url = getVoiceUrl(clipId);
+    if (url) {
+        lastSpeechAtMs = now;
+        cancelSpeech();
+        if (!voiceAudio) voiceAudio = new Audio();
+        voiceAudio.pause();
+        voiceAudio.src = url;
+        voiceAudio.volume = BASE_VOICE_VOL * masterVolume;
+        void voiceAudio.play().catch(() => {
+            if (fallbackText) speakTts(fallbackText, { force });
+        });
+        return;
+    }
+    if (fallbackText) speakTts(fallbackText, { force });
+}
+
+function speakKey(i18nKey, { force = false } = {}) {
+    const clipId = VOICE_CLIP_BY_I18N_KEY[i18nKey];
+    speakVoice(clipId, { force, fallbackText: t(i18nKey) });
+}
+
+function cancelSpeech() {
+    if (voiceAudio) {
+        voiceAudio.pause();
+        voiceAudio.currentTime = 0;
+    }
+    if (!speechAvailable) return;
+    try {
+        window.speechSynthesis.cancel();
+    } catch (_) {}
+}
+
+/* ---------- Эмоциональные звуки-сигналы (понятны без слов) ---------- */
+
+function playToneSequence(notes, type = 'sine', baseVol = 0.3) {
+    if (!soundEffectsEnabled || backgroundSuspended) return;
+    const ctx = getOrCreateSfxContext();
+    if (!ctx) return;
+    if (ctx.state === 'suspended') void ctx.resume();
+    const t0 = ctx.currentTime;
+    const vol = baseVol * masterVolume;
+    for (const { f, at, dur } of notes) {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = type;
+        osc.frequency.value = f;
+        gain.gain.setValueAtTime(0, t0 + at);
+        gain.gain.linearRampToValueAtTime(vol, t0 + at + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, t0 + at + dur);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(t0 + at);
+        osc.stop(t0 + at + dur + 0.05);
+    }
+}
+
+/** Радостный восходящий джингл — похвала за серию */
+function playPraiseJingle() {
+    playToneSequence(
+        [
+            { f: 523.25, at: 0, dur: 0.16 },
+            { f: 659.25, at: 0.12, dur: 0.16 },
+            { f: 783.99, at: 0.24, dur: 0.28 }
+        ],
+        'triangle',
+        0.34
+    );
+}
+
+/** Фанфары при поимке бонуса */
+function playPowerupFanfare() {
+    playToneSequence(
+        [
+            { f: 392, at: 0, dur: 0.14 },
+            { f: 523.25, at: 0.1, dur: 0.14 },
+            { f: 659.25, at: 0.2, dur: 0.14 },
+            { f: 783.99, at: 0.3, dur: 0.34 }
+        ],
+        'triangle',
+        0.32
+    );
+}
+
+/** Тревожный сигнал — вода поднимается */
+function playWaterAlarm() {
+    playToneSequence(
+        [
+            { f: 330, at: 0, dur: 0.22 },
+            { f: 262, at: 0.26, dur: 0.3 }
+        ],
+        'square',
+        0.16
+    );
+}
+
 function playSplashSound() {
     playOneShotSfx(SFX_SPLASH_URL, BASE_SFX_SPLASH_VOL);
 }
@@ -553,6 +783,9 @@ let lastPowerupSpawnTime = 0;
 let nextPowerupSpawnDelay = 12000;
 /** Сколько капель поймано подряд без промаха */
 let catchStreak = 0;
+/** Обучающая подсказка в начале раунда: видна, пока игрок не «соберёт» ведро */
+let onboardingActive = false;
+let onboardingFade = 1;
 
 function isPowerupActive(type, nowMs) {
     return powerupUntil[type] > nowMs;
@@ -596,6 +829,38 @@ function registerCatchStreak() {
     if (catchStreak > 0 && catchStreak % GAME_CFG.streakForBonus === 0) {
         spawnPowerup('drain');
     }
+}
+
+/**
+ * Похвала на ключевых отметках серии — мгновенная обратная связь.
+ * Для нечитающих детей: звёзды вместо слов + радостный джингл + голос.
+ */
+function maybePraiseStreak(x, y) {
+    let key = null;
+    let stars = '';
+    if (catchStreak === 5) {
+        key = 'praise5';
+        stars = '⭐';
+    } else if (catchStreak === 10) {
+        key = 'praise10';
+        stars = '⭐⭐';
+    } else if (catchStreak === 20) {
+        key = 'praise20';
+        stars = '⭐⭐⭐';
+    } else if (catchStreak > 0 && catchStreak % GAME_CFG.streakForBonus === 0) {
+        key = 'praiseBig';
+        stars = '🌟🎉🌟';
+    }
+    if (!key) return;
+    spawnFloatingText(stars, x, y, {
+        size: gameLayout.minSide * 0.075,
+        speed: 0.7,
+        decay: 0.009,
+        pop: true,
+        stroke: 'rgba(0,0,0,0)'
+    });
+    playPraiseJingle();
+    speakKey(key);
 }
 
 const GAME_CFG = {
@@ -860,7 +1125,7 @@ function applyUiLanguage() {
     updateTrackingDisplay(lastTrackingPersons, lastTrackingBuckets);
     updateMugTimerHud(lastTrackingBuckets, performance.now());
     if (gameOverOverlay && !gameOverOverlay.classList.contains('is-hidden')) {
-        gameOverOverlay.textContent = t('gameOver', { n: score });
+        renderGameOverOverlay();
     }
 }
 
@@ -952,6 +1217,7 @@ function suspendAppForBackground() {
     void video.pause();
     pauseCameraTracks();
     suspendSharedAudio();
+    cancelSpeech();
 }
 
 function resumeAppFromBackground() {
@@ -995,19 +1261,83 @@ function updateHud() {
     }
 }
 
+function loadBestScore() {
+    const raw = parseInt(localStorage.getItem(STORAGE_BEST_SCORE) ?? '0', 10);
+    return Number.isFinite(raw) && raw > 0 ? raw : 0;
+}
+
+let lastGameWasNewBest = false;
+
+function renderGameOverOverlay() {
+    if (!gameOverOverlay) return;
+    const isNewBest = lastGameWasNewBest;
+    const best = Math.max(score, loadBestScore());
+    const starCount = score >= 30 ? 3 : score >= 15 ? 2 : 1;
+
+    gameOverOverlay.innerHTML = '';
+
+    const title = document.createElement('div');
+    title.className = 'game-over-title';
+    title.textContent = `🎉 ${t('resultTitle')}`;
+    gameOverOverlay.appendChild(title);
+
+    // звёзды результата — главный «язык» для нечитающих
+    const starsRow = document.createElement('div');
+    starsRow.className = 'game-over-stars';
+    for (let i = 0; i < 3; i++) {
+        const star = document.createElement('span');
+        star.className = `game-over-star${i < starCount ? '' : ' is-dim'}`;
+        star.textContent = '⭐';
+        starsRow.appendChild(star);
+    }
+    gameOverOverlay.appendChild(starsRow);
+
+    const caught = document.createElement('div');
+    caught.className = 'game-over-caught';
+    caught.textContent = `💧 ${score}`;
+    caught.setAttribute('aria-label', t('resultCaught', { n: score }));
+    gameOverOverlay.appendChild(caught);
+
+    const bestEl = document.createElement('div');
+    bestEl.className = `game-over-best${isNewBest ? ' is-new-best' : ''}`;
+    bestEl.textContent = isNewBest ? `🏆 ${t('resultNewBest')}` : `🏆 ${best}`;
+    gameOverOverlay.appendChild(bestEl);
+
+    const again = document.createElement('button');
+    again.type = 'button';
+    again.className = 'game-over-again';
+    again.setAttribute('aria-label', t('playAgain'));
+    const againIcon = document.createElement('span');
+    againIcon.className = 'game-over-again-icon';
+    againIcon.textContent = '↻';
+    const againText = document.createElement('span');
+    againText.className = 'game-over-again-text';
+    againText.textContent = t('playAgain');
+    again.appendChild(againIcon);
+    again.appendChild(againText);
+    again.addEventListener('click', () => startGame());
+    gameOverOverlay.appendChild(again);
+}
+
 function triggerGameOver() {
     if (!isPlaying) return;
     stopGameMusic();
     isPlaying = false;
-    if (gameOverOverlay) {
-        gameOverOverlay.textContent = t('gameOver', { n: score });
-        gameOverOverlay.classList.remove('is-hidden');
-    }
+    lastGameWasNewBest = score > loadBestScore();
+    if (lastGameWasNewBest) localStorage.setItem(STORAGE_BEST_SCORE, String(score));
+    renderGameOverOverlay();
+    gameOverOverlay?.classList.remove('is-hidden');
+    playPraiseJingle();
+    speakVoice('result-title', {
+        force: true,
+        fallbackText: `${t('resultTitle')} ${t('resultCaught', { n: score })}`
+    });
 }
 
 function showMainMenu() {
     isPlaying = false;
     stopGameMusic();
+    cancelSpeech();
     gameOverOverlay?.classList.add('is-hidden');
     mainMenu.classList.remove('is-hidden');
     hudGame.classList.add('is-hidden');
@@ -1043,6 +1373,18 @@ function startGame() {
     lastPowerupSpawnTime = performance.now();
     nextPowerupSpawnDelay = randPowerupDelay();
     resetPowerups();
+    floatingTexts.length = 0;
+    onboardingActive = true;
+    onboardingFade = 1;
+    // голосовая инструкция для нечитающих — чуть позже, чтобы не наложиться на старт музыки
+    setTimeout(() => {
+        if (isPlaying && onboardingActive) {
+            speakVoice('howto-spread-bucket', {
+                force: true,
+                fallbackText: `${t('howToSpread')} ${t('howToBucket')}`
+            });
+        }
+    }, 900);
     lastFrameTime = performance.now();
     resetWristSmoothing();
     initLeakSpots();
@@ -1748,6 +2090,263 @@ function spawnSplash(x, y, color) {
     for (let i = 0; i < 8; i++) particles.push(new SplashParticle(x, y, color, 'dot'));
 }
 
+/**
+ * Канвас зеркалится через CSS (scaleX(-1)), поэтому текст надо рисовать
+ * заранее отражённым — тогда на экране он читается нормально.
+ */
+function drawMirroredText(ctx, text, x, y, { fill, stroke } = {}) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(-1, 1);
+    if (stroke) ctx.strokeText(text, 0, 0);
+    if (fill) ctx.fillText(text, 0, 0);
+    ctx.restore();
+}
+
+/** Всплывающие надписи: «+1», названия бонусов, похвала за серию */
+const floatingTexts = [];
+
+function spawnFloatingText(text, x, y, opts = {}) {
+    const { minSide } = gameLayout;
+    floatingTexts.push({
+        text,
+        x,
+        y,
+        vy: -(opts.speed ?? 1.1),
+        life: 1,
+        decay: opts.decay ?? 0.016,
+        size: opts.size ?? minSide * 0.045,
+        color: opts.color ?? '#ffffff',
+        stroke: opts.stroke ?? 'rgba(0, 0, 0, 0.55)',
+        pop: opts.pop ?? false
+    });
+    if (floatingTexts.length > 14) floatingTexts.shift();
+}
+
+/**
+ * Анимированная фигурка-показ: разводит руки → появляется ведро → в него падает капля.
+ * Понятно без чтения; фигурка симметрична, зеркалирование канваса ей не вредит.
+ */
+function drawOnboardingDemoFigure(ctx, cx, cy, u) {
+    // u — фаза цикла 0..1
+    const armPhase = Math.min(1, u / 0.32); // руки поднимаются
+    const bucketA = Math.max(0, Math.min(1, (u - 0.3) / 0.12)); // ведро проявляется
+    const dropPhase = Math.max(0, Math.min(1, (u - 0.46) / 0.34)); // капля падает
+    const splash = u > 0.8 && u < 0.95;
+
+    const { minSide } = gameLayout;
+    const S = minSide * 0.085; // базовый размер фигурки
+    const headR = S * 0.34;
+    const shoulderY = cy - S * 0.25;
+    const armL = S * 1.05;
+    // руки: от «вниз» (70°) к «в стороны» (0°), с лёгким отскоком
+    const ease = 1 - Math.pow(1 - armPhase, 3);
+    const armAng = ((1 - ease) * 70 * Math.PI) / 180;
+
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = Math.max(3, S * 0.14);
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.55)';
+    ctx.shadowBlur = 6;
+
+    // голова
+    ctx.beginPath();
+    ctx.arc(cx, shoulderY - headR * 1.6, headR, 0, Math.PI * 2);
+    ctx.stroke();
+    // туловище
+    ctx.beginPath();
+    ctx.moveTo(cx, shoulderY - headR * 0.6);
+    ctx.lineTo(cx, shoulderY + S * 1.1);
+    ctx.stroke();
+    // ноги
+    ctx.beginPath();
+    ctx.moveTo(cx, shoulderY + S * 1.1);
+    ctx.lineTo(cx - S * 0.5, shoulderY + S * 1.9);
+    ctx.moveTo(cx, shoulderY + S * 1.1);
+    ctx.lineTo(cx + S * 0.5, shoulderY + S * 1.9);
+    ctx.stroke();
+    // руки
+    const handLx = cx - Math.cos(armAng) * armL;
+    const handLy = shoulderY + Math.sin(armAng) * armL;
+    const handRx = cx + Math.cos(armAng) * armL;
+    const handRy = shoulderY + Math.sin(armAng) * armL;
+    ctx.beginPath();
+    ctx.moveTo(cx, shoulderY);
+    ctx.lineTo(handLx, handLy);
+    ctx.moveTo(cx, shoulderY);
+    ctx.lineTo(handRx, handRy);
+    ctx.stroke();
+
+    // ведро между руками
+    if (bucketA > 0) {
+        ctx.globalAlpha = bucketA;
+        const bw = (handRx - handLx) * 0.82;
+        const bh = bw * 0.62;
+        const bx = cx;
+        const byTop = shoulderY + S * 0.05;
+        ctx.fillStyle = 'rgba(216, 150, 70, 0.95)';
+        ctx.beginPath();
+        ctx.moveTo(bx - bw / 2, byTop);
+        ctx.lineTo(bx + bw / 2, byTop);
+        ctx.lineTo(bx + bw * 0.36, byTop + bh);
+        ctx.lineTo(bx - bw * 0.36, byTop + bh);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+
+        // капля падает в ведро
+        if (dropPhase > 0 && !splash) {
+            const dropStartY = cy - S * 3.1;
+            const dy = dropStartY + (byTop - dropStartY) * dropPhase;
+            drawDropBulb(ctx, bx, dy, S * 0.22, 1, 'normal');
+        }
+        if (splash) {
+            ctx.strokeStyle = '#7ec8ff';
+            ctx.lineWidth = Math.max(2, S * 0.09);
+            const sr = S * (0.3 + ((u - 0.8) / 0.15) * 0.45);
+            ctx.beginPath();
+            ctx.arc(bx, byTop, sr, Math.PI, Math.PI * 2);
+            ctx.stroke();
+        }
+    }
+    ctx.restore();
+}
+
+/** Подсказка на старте: анимированный показ + короткий текст для читающих */
+function drawOnboardingHint(ctx) {
+    const { w, minSide } = gameLayout;
+    const a = Math.max(0, Math.min(1, onboardingFade));
+    if (a <= 0) return;
+
+    ctx.save();
+    ctx.globalAlpha = a;
+
+    // фигурка-показ в центре (цикл ~3.2 сек; gameTime в кадрах 60fps)
+    const u = (gameTime / (60 * 3.2)) % 1;
+    const figY = gameLayout.h * 0.34;
+    drawOnboardingDemoFigure(ctx, w / 2, figY, u);
+
+    // пульсирующие стрелки в стороны на уровне рук
+    const pulse = (Math.sin(gameTime * 0.14) + 1) / 2;
+    const off = minSide * (0.24 + pulse * 0.05);
+    const sArr = minSide * 0.03;
+    ctx.fillStyle = '#ffd95e';
+    ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+    ctx.lineWidth = 2;
+    for (const dir of [-1, 1]) {
+        const ax = w / 2 + dir * off;
+        ctx.beginPath();
+        ctx.moveTo(ax + dir * sArr, figY - sArr * 0.4);
+        ctx.lineTo(ax - dir * sArr * 0.7, figY - sArr * 1.25);
+        ctx.lineTo(ax - dir * sArr * 0.7, figY + sArr * 0.45);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+    }
+
+    // текст внизу подсказки — второстепенный, для тех, кто читает
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const small = minSide * 0.038;
+    ctx.font = `900 ${Math.round(small)}px Outfit, sans-serif`;
+    ctx.lineWidth = Math.max(2, small * 0.14);
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
+    ctx.fillStyle = '#ffffff';
+    const textY = figY + minSide * 0.26;
+    drawMirroredText(ctx, `${t('howToSpread')} ${t('howToBucket')}`, w / 2, textY, {
+        fill: true,
+        stroke: true
+    });
+    ctx.fillStyle = '#aee6ff';
+    drawMirroredText(ctx, t('howToCatch'), w / 2, textY + small * 1.5, { fill: true, stroke: true });
+    ctx.restore();
+}
+
+/** Счётчик серии с кольцом прогресса до бонуса «слив воды» (показывается с 3 подряд) */
+function drawStreakCounter(ctx) {
+    if (catchStreak < 3) return;
+    const { w, minSide } = gameLayout;
+    const r = minSide * 0.045;
+    const x = w / 2;
+    const y = minSide * 0.19;
+    const frac = (catchStreak % GAME_CFG.streakForBonus) / GAME_CFG.streakForBonus;
+
+    ctx.save();
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+    ctx.beginPath();
+    ctx.arc(x, y, r * 1.25, 0, Math.PI * 2);
+    ctx.fill();
+
+    // кольцо прогресса к бонусу
+    ctx.strokeStyle = POWERUP_DEFS.drain.color;
+    ctx.lineWidth = Math.max(3, r * 0.22);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.arc(x, y, r * 1.05, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (frac === 0 ? 1 : frac));
+    ctx.stroke();
+
+    ctx.fillStyle = '#ffd95e';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `900 ${Math.round(r * 0.95)}px Outfit, sans-serif`;
+    drawMirroredText(ctx, `×${catchStreak}`, x, y, { fill: true });
+    ctx.restore();
+}
+
+/** Мигающее предупреждение, когда вода близка к проигрышу */
+function drawWaterWarning(ctx) {
+    const dangerStart = GAME_CFG.waterGameOverFrac * 0.7;
+    if (waterLevel < dangerStart) return;
+    const { w, h, minSide } = gameLayout;
+    const closeness = Math.min(
+        1,
+        (waterLevel - dangerStart) / (GAME_CFG.waterGameOverFrac - dangerStart)
+    );
+    const blink = (Math.sin(gameTime * (0.15 + closeness * 0.12)) + 1) / 2;
+    const a = 0.45 + blink * 0.55;
+
+    ctx.save();
+    ctx.globalAlpha = a;
+    const size = minSide * 0.045;
+    ctx.font = `900 ${Math.round(size)}px Outfit, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineWidth = Math.max(2, size * 0.14);
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
+    ctx.fillStyle = '#ff6b6b';
+    const y = h - waterLevel * h - size * 1.4;
+    drawMirroredText(ctx, `⚠ ${t('waterWarning')}`, w / 2, y, { fill: true, stroke: true });
+    ctx.restore();
+}
+
+function updateAndDrawFloatingTexts(ctx, dt) {
+    for (let i = floatingTexts.length - 1; i >= 0; i--) {
+        const ft = floatingTexts[i];
+        ft.y += ft.vy * dt;
+        ft.life -= ft.decay * dt;
+        if (ft.life <= 0) {
+            floatingTexts.splice(i, 1);
+            continue;
+        }
+        const a = Math.max(0, Math.min(1, ft.life));
+        // лёгкий «выпрыг» в начале жизни
+        const popScale = ft.pop ? 1 + Math.max(0, ft.life - 0.85) * 2.4 : 1;
+        ctx.save();
+        ctx.globalAlpha = a;
+        ctx.font = `900 ${Math.round(ft.size * popScale)}px Outfit, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.lineWidth = Math.max(2, ft.size * 0.14);
+        ctx.strokeStyle = ft.stroke;
+        ctx.fillStyle = ft.color;
+        drawMirroredText(ctx, ft.text, ft.x, ft.y, { fill: true, stroke: true });
+        ctx.restore();
+    }
+}
+
 function drawPowerupGlyph(ctx, type, cx, cy, s) {
     ctx.save();
     ctx.translate(cx, cy);
@@ -1909,8 +2508,32 @@ function updatePowerups(dt, nowMs, activeBuckets, floorY) {
             } else {
                 activatePowerup(p.type, nowMs);
             }
+            const popupByType = {
+                slowmo: { key: 'popupSlowmo', emoji: '🐌' },
+                magnet: { key: 'popupMagnet', emoji: '🧲' },
+                big: { key: 'popupBig', emoji: '🪣' },
+                drain: { key: 'popupDrain', emoji: '💧⬇' }
+            };
+            const popup = popupByType[p.type];
+            if (popup) {
+                // крупный эмодзи — для нечитающих, слово поменьше — для читающих
+                spawnFloatingText(popup.emoji, p.x, p.y - p.r * 3, {
+                    size: gameLayout.minSide * 0.085,
+                    speed: 0.7,
+                    decay: 0.009,
+                    pop: true,
+                    stroke: 'rgba(0,0,0,0)'
+                });
+                spawnFloatingText(t(popup.key), p.x, p.y - p.r * 0.6, {
+                    color: POWERUP_DEFS[p.type]?.color ?? '#fff',
+                    size: gameLayout.minSide * 0.04,
+                    speed: 0.7,
+                    decay: 0.011
+                });
+                speakKey(popup.key);
+            }
             spawnSplash(p.x, p.y, POWERUP_DEFS[p.type]?.color ?? '#fff');
-            playCatchSound();
+            playPowerupFanfare();
             powerups.splice(i, 1);
             continue;
         }
@@ -2266,14 +2889,56 @@ function updateTrackingDisplay(orderedPersons, activeBuckets) {
 
 function drawWristMarkers(ctx, bucket, playerColor = '#00f3ff') {
     if (!bucket) return;
-    for (const pt of [bucket.leftWrist, bucket.rightWrist]) {
-        ctx.fillStyle = playerColor;
+
+    const spritesReady =
+        handLSpriteReady && handRSpriteReady && handLSprite.naturalWidth && handRSprite.naturalWidth;
+
+    if (!spritesReady) {
+        for (const pt of [bucket.leftWrist, bucket.rightWrist]) {
+            ctx.fillStyle = playerColor;
+            ctx.beginPath();
+            ctx.arc(pt.x, pt.y, 10, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+        return;
+    }
+
+    // Канвас зеркалится через CSS: точка с бОльшим canvas-x видна на экране слева.
+    // Выбираем спрайт по положению на экране, а не по меткам MediaPipe (они могут путаться).
+    const a = bucket.leftWrist;
+    const b = bucket.rightWrist;
+    const leftOnScreen = a.x >= b.x ? a : b;
+    const rightOnScreen = a.x >= b.x ? b : a;
+
+    const w = Math.max(30, bucket.shoulderW * 0.34);
+    const pairs = [
+        [leftOnScreen, handRSprite],
+        [rightOnScreen, handLSprite]
+    ];
+    for (const [pt, img] of pairs) {
+        const h = w * (img.naturalHeight / img.naturalWidth);
+
+        // мягкое свечение цветом игрока — чтобы в коопе было видно, чьи руки
+        ctx.save();
+        const glow = ctx.createRadialGradient(pt.x, pt.y, w * 0.1, pt.x, pt.y, w * 0.7);
+        glow.addColorStop(0, playerColor);
+        glow.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.globalAlpha = 0.45;
+        ctx.fillStyle = glow;
         ctx.beginPath();
-        ctx.arc(pt.x, pt.y, 10, 0, Math.PI * 2);
+        ctx.arc(pt.x, pt.y, w * 0.7, 0, Math.PI * 2);
         ctx.fill();
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
-        ctx.lineWidth = 2;
-        ctx.stroke();
+        ctx.restore();
+
+        // компенсация CSS-зеркала, чтобы кулак на экране выглядел как в PNG
+        ctx.save();
+        ctx.translate(pt.x, pt.y);
+        ctx.scale(-1, 1);
+        ctx.drawImage(img, -w / 2, -h / 2, w, h);
+        ctx.restore();
     }
 }
 
@@ -2329,7 +2994,7 @@ function gameLoop(nowTime) {
         video.videoHeight * ratio
     );
 
-    canvasCtx.fillStyle = 'rgba(0,0,0,0.52)';
+    canvasCtx.fillStyle = 'rgba(0,0,0,0.2)';
     canvasCtx.fillRect(0, 0, canvasElement.width, canvasElement.height);
 
     function getScreenPoint(landmark) {
@@ -2445,11 +3110,22 @@ function gameLoop(nowTime) {
             if (drop.kind === 'red') {
                 applyMugMode(catcher.poseKey, nowTime);
                 spawnSplash(drop.x, drop.y, '#b87333');
+                spawnFloatingText('☕😮', drop.x, drop.y - drop.r * 2, {
+                    size: gameLayout.minSide * 0.06,
+                    pop: true,
+                    stroke: 'rgba(0,0,0,0)'
+                });
+                speakKey('popupMug');
             } else {
                 score += 1;
                 registerCatchStreak();
                 updateHud();
                 spawnSplash(drop.x, drop.y, '#7ec8ff');
+                spawnFloatingText('+1', drop.x, drop.y - drop.r * 2, {
+                    color: '#aee6ff',
+                    size: gameLayout.minSide * 0.038
+                });
+                maybePraiseStreak(drop.x, drop.y - drop.r * 4);
                 playCatchSound();
             }
             drops.splice(i, 1);
@@ -2460,7 +3136,14 @@ function gameLoop(nowTime) {
             drop.dead = true;
             if (drop.kind !== 'red') {
                 catchStreak = 0;
+                const prevWater = waterLevel;
                 waterLevel = Math.min(1, waterLevel + GAME_CFG.waterRisePerMiss);
+                // первое пересечение «опасной» отметки — звуковая тревога и голос
+                const dangerStart = GAME_CFG.waterGameOverFrac * 0.7;
+                if (prevWater < dangerStart && waterLevel >= dangerStart) {
+                    playWaterAlarm();
+                    speakKey('waterWarning', { force: true });
+                }
                 updateHud();
                 playSplashSound();
             }
@@ -2501,6 +3184,21 @@ function gameLoop(nowTime) {
         p.draw(canvasCtx);
         if (p.life <= 0) particles.splice(i, 1);
     }
+
+    // Обучающая подсказка: плавно гаснет, как только ребёнок собрал ведро
+    if (onboardingActive) {
+        if (activeBuckets.length > 0) {
+            onboardingFade -= 0.03 * dt;
+            if (onboardingFade <= 0) onboardingActive = false;
+        } else {
+            onboardingFade = Math.min(1, onboardingFade + 0.05 * dt);
+        }
+        if (onboardingActive) drawOnboardingHint(canvasCtx);
+    }
+
+    drawStreakCounter(canvasCtx);
+    drawWaterWarning(canvasCtx);
+    updateAndDrawFloatingTexts(canvasCtx, dt);
 
     if (DEBUG_FRAME_PERF) {
         const elapsed = performance.now() - startTimeMs;
