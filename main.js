@@ -432,12 +432,13 @@ function preloadHtmlAudioUrl(url) {
     void a.load();
 }
 
-function warmSfxAudioBuffersYielding() {
+function warmAudioBuffersYielding(urls) {
     const ctx = getOrCreateSfxContext();
     if (!ctx) return;
-    const urls = [SFX_CATCH_URL, SFX_SPLASH_URL].filter(Boolean);
+    const list = urls.filter(Boolean);
     void (async () => {
-        for (const u of urls) {
+        for (const u of list) {
+            if (sfxAudioBufferByUrl.has(u)) continue;
             try {
                 await ensureSfxAudioBuffer(ctx, u);
             } catch (_) {}
@@ -446,13 +447,23 @@ function warmSfxAudioBuffersYielding() {
     })();
 }
 
+function collectVoiceUrlsPrioritized() {
+    const current = Object.values(voiceUrlByLang[uiLang] ?? {});
+    const others = [];
+    for (const [lang, map] of Object.entries(voiceUrlByLang)) {
+        if (lang === uiLang) continue;
+        others.push(...Object.values(map));
+    }
+    return [...current, ...others].filter(Boolean);
+}
+
 function preloadGameAudio() {
     if (soundEffectsEnabled) {
         for (const u of [SFX_CATCH_URL, SFX_SPLASH_URL]) preloadHtmlAudioUrl(u);
-        for (const map of Object.values(voiceUrlByLang)) {
-            for (const u of Object.values(map)) preloadHtmlAudioUrl(u);
-        }
-        warmSfxAudioBuffersYielding();
+        // Декодируем эффекты и голосовые клипы в Web Audio буферы заранее:
+        // на iOS HTML-аудио по первому проигрыванию тянется по сети и звучит с задержкой,
+        // а декодированный буфер играет мгновенно после разблокировки контекста.
+        warmAudioBuffersYielding([SFX_CATCH_URL, SFX_SPLASH_URL, ...collectVoiceUrlsPrioritized()]);
     }
     if (musicEnabled) {
         preloadHtmlAudioUrl(MENU_MUSIC_URL);
@@ -479,6 +490,10 @@ function tryUnlockAudioOnUserGesture() {
     if (htmlAudioUnlocked || audioUnlockBusy) return;
     audioUnlockBusy = true;
     resumeSharedAudioContext();
+    // По первому жесту догреваем буферы (на случай, если эффекты включили после загрузки).
+    if (soundEffectsEnabled) {
+        warmAudioBuffersYielding([SFX_CATCH_URL, SFX_SPLASH_URL, ...collectVoiceUrlsPrioritized()]);
+    }
     const a = new Audio();
     a.preload = 'auto';
     a.src = MENU_MUSIC_URL;
@@ -608,6 +623,7 @@ function playCatchSound() {
 const speechAvailable = typeof window !== 'undefined' && 'speechSynthesis' in window;
 let lastSpeechAtMs = 0;
 let voiceAudio = null;
+let voiceBufferSource = null;
 
 function getVoiceUrl(clipId) {
     if (!clipId) return null;
@@ -630,6 +646,43 @@ function speakTts(text, { force = false, rate = 0.95 } = {}) {
     } catch (_) {}
 }
 
+function playVoiceViaWebAudio(url, volume) {
+    const ctx = window.__roofLeakAudioCtx || getOrCreateSfxContext();
+    const buf = ctx && sfxAudioBufferByUrl.get(url);
+    if (!ctx || !buf) {
+        // Буфера ещё нет — догреем для следующего раза.
+        if (ctx) void ensureSfxAudioBuffer(ctx, url).catch(() => {});
+        return false;
+    }
+    try {
+        if (ctx.state === 'suspended') void ctx.resume();
+        stopVoiceBufferSource();
+        const src = ctx.createBufferSource();
+        const gain = ctx.createGain();
+        gain.gain.value = volume;
+        src.buffer = buf;
+        src.connect(gain);
+        gain.connect(ctx.destination);
+        src.onended = () => {
+            if (voiceBufferSource === src) voiceBufferSource = null;
+        };
+        voiceBufferSource = src;
+        src.start(0);
+        return true;
+    } catch (_) {
+        return false;
+    }
+}
+
+function stopVoiceBufferSource() {
+    if (!voiceBufferSource) return;
+    try {
+        voiceBufferSource.onended = null;
+        voiceBufferSource.stop(0);
+    } catch (_) {}
+    voiceBufferSource = null;
+}
+
 /** clipId — имя файла без расширения, например howto-spread-bucket */
 function speakVoice(clipId, { force = false, fallbackText = '' } = {}) {
     if (!soundEffectsEnabled || backgroundSuspended) return;
@@ -640,10 +693,13 @@ function speakVoice(clipId, { force = false, fallbackText = '' } = {}) {
     if (url) {
         lastSpeechAtMs = now;
         cancelSpeech();
+        const vol = BASE_VOICE_VOL * masterVolume;
+        // Сначала пробуем мгновенный Web Audio (декодированный буфер) — без сетевой задержки на iOS.
+        if (playVoiceViaWebAudio(url, vol)) return;
         if (!voiceAudio) voiceAudio = new Audio();
         voiceAudio.pause();
         voiceAudio.src = url;
-        voiceAudio.volume = BASE_VOICE_VOL * masterVolume;
+        voiceAudio.volume = vol;
         voiceAudio.onended = null;
         void voiceAudio.play().catch(() => {
             if (fallbackText) speakTts(fallbackText, { force: true });
@@ -659,6 +715,7 @@ function speakKey(i18nKey, { force = false } = {}) {
 }
 
 function cancelSpeech() {
+    stopVoiceBufferSource();
     if (voiceAudio) {
         voiceAudio.pause();
         voiceAudio.currentTime = 0;
