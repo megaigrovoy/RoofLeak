@@ -690,28 +690,35 @@ canvas {
   line-height: 1.4;
 }
 
-.menu-gallery-link {
-  display: inline-flex;
+.btn-gallery {
+  display: flex;
   align-items: center;
   justify-content: center;
-  margin-top: 1.15rem;
-  font-size: 0.88rem;
-  font-weight: 700;
+  width: 100%;
+  padding: 0.45rem 0.65rem;
+  border-radius: 12px;
+  border: 1px solid rgba(196, 165, 116, 0.38);
+  background: rgba(42, 30, 22, 0.92);
+  color: #f5ead6;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 800;
   letter-spacing: 0.04em;
-  color: var(--menu-text-muted);
+  text-align: center;
   text-decoration: none;
-  transition: color 0.14s ease, text-shadow 0.14s ease;
+  cursor: pointer;
+  transition: border-color 0.2s, box-shadow 0.2s, background 0.2s, color 0.2s;
 }
 
-.menu-gallery-link:hover {
-  color: var(--menu-water-bright);
-  text-shadow: 0 0 10px var(--menu-glow-water);
+.btn-gallery:hover {
+  border-color: rgba(168, 212, 232, 0.55);
+  background: rgba(52, 38, 28, 0.96);
+  box-shadow: 0 0 14px rgba(126, 180, 204, 0.28);
 }
 
-.menu-gallery-link:focus-visible {
-  outline: 2px solid var(--menu-water-bright);
-  outline-offset: 3px;
-  border-radius: 4px;
+.btn-gallery:focus-visible {
+  outline: 2px solid rgba(168, 212, 232, 0.75);
+  outline-offset: 2px;
 }
 
 .menu-options {
