@@ -25,47 +25,6 @@
       <video id="webcam" autoplay playsinline muted></video>
       <canvas id="game-canvas"></canvas>
       <div id="ui-layer">
-        <div class="ui-top-controls">
-          <button type="button" id="btn-fullscreen" class="btn-fullscreen" aria-label="На весь экран">
-            <span class="btn-fullscreen-on" aria-hidden="true">⛶</span>
-            <span class="btn-fullscreen-off" aria-hidden="true">⛶</span>
-            <span class="btn-fullscreen-label">На весь экран</span>
-          </button>
-          <div id="ui-lang-picker" class="ui-lang-picker" role="radiogroup" aria-labelledby="menu-lang-label">
-            <div id="menu-lang-label" class="ui-lang-label">Язык</div>
-            <div class="ui-lang-segment">
-              <label class="ui-lang-pill">
-                <input type="radio" name="roof-leak-lang" id="opt-lang-ru" value="ru" checked />
-                <span id="opt-lang-ru-label">RU</span>
-              </label>
-              <label class="ui-lang-pill">
-                <input type="radio" name="roof-leak-lang" id="opt-lang-en" value="en" />
-                <span id="opt-lang-en-label">EN</span>
-              </label>
-            </div>
-          </div>
-          <div id="ui-players-picker" class="ui-lang-picker" role="radiogroup" aria-labelledby="menu-player-label">
-            <div id="menu-player-label" class="ui-lang-label">Игроки</div>
-            <div class="ui-lang-segment">
-              <label class="ui-lang-pill">
-                <input type="radio" name="roof-leak-players" id="opt-players-1" value="1" />
-                <span id="opt-players-1-label">1</span>
-              </label>
-              <label class="ui-lang-pill">
-                <input type="radio" name="roof-leak-players" id="opt-players-2" value="2" checked />
-                <span id="opt-players-2-label">2</span>
-              </label>
-            </div>
-          </div>
-          <a
-            id="btn-gallery"
-            class="btn-gallery"
-            href="https://blagogames.com/games"
-            rel="noopener noreferrer"
-          >
-            Галерея игр
-          </a>
-        </div>
         <div id="hud-game" class="hud-game is-hidden">
           <div id="game-over-overlay" class="game-over-overlay is-hidden" aria-live="assertive">GAME OVER</div>
           <h1 id="score-display">Поймано: 0</h1>
@@ -97,8 +56,21 @@
             <div class="menu-hero menu-hero-roof-leak">
               <img id="menu-hero-image" class="menu-hero-image" src="" alt="Roof Leak" width="1344" height="768" decoding="async" />
             </div>
-            <div class="menu-cta">
+            <div class="menu-cta-row">
               <button type="button" id="btn-start" class="btn-start">Играть</button>
+              <button type="button" id="btn-fullscreen" class="btn-menu-secondary btn-fullscreen" aria-label="На весь экран">
+                <span class="btn-fullscreen-on btn-menu-secondary-icon" aria-hidden="true">⛶</span>
+                <span class="btn-fullscreen-off btn-menu-secondary-icon" aria-hidden="true">⛶</span>
+                <span class="btn-fullscreen-label">На весь экран</span>
+              </button>
+              <a
+                id="btn-gallery"
+                class="btn-menu-secondary btn-gallery"
+                href="https://blagogames.com/games"
+                rel="noopener noreferrer"
+              >
+                Галерея игр
+              </a>
             </div>
             <div class="menu-options" role="group" aria-label="Опции">
               <div id="menu-options-title" class="menu-options-title">Звук и музыка</div>
@@ -147,6 +119,34 @@
                 </span>
                 <span class="menu-option-switch" aria-hidden="true"><span class="menu-option-knob"></span></span>
               </label>
+            </div>
+            <div class="menu-settings-row">
+              <div id="ui-lang-picker" class="menu-setting-block" role="radiogroup" aria-labelledby="menu-lang-label">
+                <div id="menu-lang-label" class="menu-setting-label">Язык</div>
+                <div class="ui-lang-segment">
+                  <label class="ui-lang-pill">
+                    <input type="radio" name="roof-leak-lang" id="opt-lang-ru" value="ru" checked />
+                    <span id="opt-lang-ru-label">RU</span>
+                  </label>
+                  <label class="ui-lang-pill">
+                    <input type="radio" name="roof-leak-lang" id="opt-lang-en" value="en" />
+                    <span id="opt-lang-en-label">EN</span>
+                  </label>
+                </div>
+              </div>
+              <div id="ui-players-picker" class="menu-setting-block" role="radiogroup" aria-labelledby="menu-player-label">
+                <div id="menu-player-label" class="menu-setting-label">Игроки</div>
+                <div class="ui-lang-segment">
+                  <label class="ui-lang-pill">
+                    <input type="radio" name="roof-leak-players" id="opt-players-1" value="1" />
+                    <span id="opt-players-1-label">1</span>
+                  </label>
+                  <label class="ui-lang-pill">
+                    <input type="radio" name="roof-leak-players" id="opt-players-2" value="2" checked />
+                    <span id="opt-players-2-label">2</span>
+                  </label>
+                </div>
+              </div>
             </div>
           </div>
         </div>

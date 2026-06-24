@@ -1400,7 +1400,7 @@ function findMenuInteractiveTarget(clientX, clientY) {
         'button:not([disabled]), a[href], label.ui-lang-pill, label.menu-option-toggle';
     for (const el of document.elementsFromPoint(clientX, clientY)) {
         if (el.closest('#menu-hand-cursor')) continue;
-        const inMenu = el.closest('#main-menu:not(.is-hidden), .ui-top-controls');
+        const inMenu = el.closest('#main-menu:not(.is-hidden)');
         if (!inMenu) continue;
         const hit = el.closest(selectors);
         if (hit) return hit;
@@ -1809,9 +1809,11 @@ mainMenu.addEventListener(
         tryUnlockAudioOnUserGesture();
         if (e.target?.closest?.('#btn-start')) return;
         if (e.target?.closest?.('#btn-fullscreen')) return;
+        if (e.target?.closest?.('#btn-gallery')) return;
         if (e.target?.closest?.('#ui-lang-picker')) return;
         if (e.target?.closest?.('#ui-players-picker')) return;
         if (e.target?.closest?.('.menu-options')) return;
+        if (e.target?.closest?.('.menu-settings-row')) return;
         playMenuMusic();
     },
     { capture: true }

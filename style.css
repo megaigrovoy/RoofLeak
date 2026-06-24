@@ -389,39 +389,23 @@ canvas {
   box-shadow: 0 0 14px rgba(0, 0, 0, 0.45);
 }
 
-/** Floating controls — fullscreen + language */
-.ui-top-controls {
-  position: fixed;
-  top: max(0.75rem, env(safe-area-inset-top));
-  right: max(0.75rem, env(safe-area-inset-right));
-  z-index: 20;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 0.45rem;
-  pointer-events: none;
-}
-
-.ui-top-controls > * {
-  pointer-events: auto;
-}
-
-.ui-lang-picker {
-  padding: 0.45rem 0.5rem;
-  border-radius: 12px;
+/** Язык / игроки — блоки в центральном меню */
+.menu-setting-block {
+  padding: 0.7rem 0.75rem;
+  border-radius: 14px;
   border: 1px solid rgba(196, 165, 116, 0.38);
-  background: rgba(42, 30, 22, 0.92);
-  box-shadow: 0 0 14px rgba(20, 12, 8, 0.4);
+  background: linear-gradient(165deg, rgba(52, 38, 28, 0.88) 0%, rgba(34, 24, 18, 0.92) 100%);
+  box-shadow: inset 0 1px 0 rgba(235, 224, 200, 0.06);
 }
 
-.ui-lang-label {
+.menu-setting-label {
   font-size: 0.62rem;
   font-weight: 800;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: rgba(196, 165, 116, 0.92);
-  margin-bottom: 0.35rem;
-  text-align: center;
+  margin-bottom: 0.45rem;
+  text-align: left;
 }
 
 .ui-lang-segment {
@@ -452,12 +436,12 @@ canvas {
 
 .ui-lang-pill span {
   display: block;
-  padding: 0.32rem 0.45rem;
-  border-radius: 8px;
+  padding: 0.42rem 0.45rem;
+  border-radius: 10px;
   border: 1px solid rgba(196, 165, 116, 0.22);
   background: rgba(20, 14, 10, 0.45);
   color: rgba(235, 218, 190, 0.78);
-  font-size: 0.72rem;
+  font-size: 0.78rem;
   font-weight: 800;
   letter-spacing: 0.04em;
   text-align: center;
@@ -475,51 +459,24 @@ canvas {
   box-shadow: 0 0 10px rgba(201, 133, 42, 0.22);
 }
 
-/** Floating «На весь экран» — всегда поверх меню и игры */
-#ui-layer > .ui-top-controls .btn-fullscreen {
-  position: static;
-}
-
 .btn-fullscreen {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-  padding: 0.45rem 0.85rem;
-  border-radius: 12px;
-  border: 1px solid rgba(196, 165, 116, 0.38);
-  background: rgba(42, 30, 22, 0.92);
-  color: #f5ead6;
   font: inherit;
-  font-size: 0.85rem;
-  font-weight: 700;
   cursor: pointer;
-  pointer-events: auto;
-  z-index: 6;
-  transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+  transition: border-color 0.2s, box-shadow 0.2s, background 0.2s, transform 0.14s ease;
 }
 
 .btn-fullscreen[hidden] {
   display: none;
 }
 
-.btn-fullscreen:hover {
-  border-color: rgba(168, 212, 232, 0.55);
-  box-shadow: 0 0 14px rgba(126, 180, 204, 0.28);
-}
-
 .btn-fullscreen-on,
 .btn-fullscreen-off {
-  font-size: 1.05rem;
+  font-size: 1.15rem;
   line-height: 1;
 }
 
 .btn-fullscreen.is-active .btn-fullscreen-on { display: none; }
 .btn-fullscreen:not(.is-active) .btn-fullscreen-off { display: none; }
-
-/** В «нативном фуллскрине» на узком экране оставляем только иконку, чтобы не мешала */
-@media (max-width: 480px) {
-  .btn-fullscreen-label { display: none; }
-}
 
 .menu-hand-cursor,
 .menu-hand-cursor * {
@@ -702,9 +659,85 @@ canvas {
   opacity: 0.55;
 }
 
-.menu-cta {
-  margin-bottom: 1.1rem;
-  margin-top: 0.35rem;
+.menu-cta-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.55rem;
+  margin: 0.35rem 0 1.1rem;
+  align-items: stretch;
+}
+
+.menu-cta-row .btn-start {
+  width: 100%;
+  padding: 0.85rem 0.75rem;
+  font-size: 1.05rem;
+  border-radius: 14px;
+  letter-spacing: 0.04em;
+}
+
+.btn-menu-secondary {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  min-height: 100%;
+  padding: 0.55rem 0.45rem;
+  border-radius: 14px;
+  border: 1px solid rgba(196, 165, 116, 0.38);
+  background: linear-gradient(165deg, rgba(52, 38, 28, 0.92) 0%, rgba(34, 24, 18, 0.96) 100%);
+  color: #f5ead6;
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0.02em;
+  text-align: center;
+  text-decoration: none;
+  box-shadow: inset 0 1px 0 rgba(235, 224, 200, 0.06);
+}
+
+.btn-menu-secondary:hover {
+  border-color: rgba(168, 212, 232, 0.55);
+  box-shadow: 0 0 14px rgba(126, 180, 204, 0.22);
+}
+
+.btn-menu-secondary:focus-visible {
+  outline: 2px solid rgba(168, 212, 232, 0.75);
+  outline-offset: 2px;
+}
+
+.btn-menu-secondary-icon {
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
+.menu-settings-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.65rem;
+  margin-top: 1.1rem;
+}
+
+@media (max-width: 420px) {
+  .menu-cta-row {
+    grid-template-columns: 1fr;
+  }
+
+  .menu-cta-row .btn-start {
+    padding: 0.95rem 1rem;
+  }
+
+  .btn-menu-secondary {
+    flex-direction: row;
+    justify-content: center;
+    padding: 0.65rem 0.75rem;
+    font-size: 0.78rem;
+  }
+
+  .menu-settings-row {
+    grid-template-columns: 1fr;
+  }
 }
 
 .btn-start {
@@ -754,40 +787,9 @@ canvas {
   line-height: 1.4;
 }
 
-.btn-gallery {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  padding: 0.45rem 0.65rem;
-  border-radius: 12px;
-  border: 1px solid rgba(196, 165, 116, 0.38);
-  background: rgba(42, 30, 22, 0.92);
-  color: #f5ead6;
-  font: inherit;
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  text-align: center;
-  text-decoration: none;
-  cursor: pointer;
-  transition: border-color 0.2s, box-shadow 0.2s, background 0.2s, color 0.2s;
-}
-
-.btn-gallery:hover {
-  border-color: rgba(168, 212, 232, 0.55);
-  background: rgba(52, 38, 28, 0.96);
-  box-shadow: 0 0 14px rgba(126, 180, 204, 0.28);
-}
-
-.btn-gallery:focus-visible {
-  outline: 2px solid rgba(168, 212, 232, 0.75);
-  outline-offset: 2px;
-}
-
 .menu-options {
   text-align: left;
-  margin-top: 1.25rem;
+  margin-top: 0;
   margin-bottom: 0;
   padding: 1rem 1.1rem;
   border-radius: 16px;
