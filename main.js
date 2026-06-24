@@ -1396,14 +1396,16 @@ function getMenuHandDisplayPoint() {
 
 function findMenuInteractiveTarget(clientX, clientY) {
     if (!isMainMenuVisible()) return null;
-    const el = document.elementFromPoint(clientX, clientY);
-    if (!el) return null;
-    const inMenu = el.closest('#main-menu:not(.is-hidden), .ui-top-controls');
-    if (!inMenu) return null;
-    const hit = el.closest(
-        'button:not([disabled]), a[href], label.ui-lang-pill, label.menu-option-toggle'
-    );
-    return hit ?? null;
+    const selectors =
+        'button:not([disabled]), a[href], label.ui-lang-pill, label.menu-option-toggle';
+    for (const el of document.elementsFromPoint(clientX, clientY)) {
+        if (el.closest('#menu-hand-cursor')) continue;
+        const inMenu = el.closest('#main-menu:not(.is-hidden), .ui-top-controls');
+        if (!inMenu) continue;
+        const hit = el.closest(selectors);
+        if (hit) return hit;
+    }
+    return null;
 }
 
 function clearMenuHandDwellHighlight() {
@@ -1421,6 +1423,11 @@ function setMenuHandCursor(clientX, clientY, dwellProgress) {
 
 function activateMenuHandTarget(el) {
     if (!el) return;
+    if (el.id === 'btn-fullscreen' || el.closest('#btn-fullscreen')) {
+        if (getCurrentFullscreenElement()) void exitFullscreen();
+        else void enterFullscreen();
+        return;
+    }
     if (el.matches('label.ui-lang-pill')) {
         el.querySelector('input')?.click();
         return;
