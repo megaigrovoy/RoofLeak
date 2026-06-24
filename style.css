@@ -521,6 +521,66 @@ canvas {
   .btn-fullscreen-label { display: none; }
 }
 
+.menu-hand-cursor {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 48px;
+  height: 48px;
+  margin: -24px 0 0 -24px;
+  pointer-events: none;
+  z-index: 30;
+  transform: translate3d(var(--menu-cursor-x, -9999px), var(--menu-cursor-y, -9999px), 0);
+  transition: opacity 0.12s ease;
+}
+
+.menu-hand-cursor.is-hidden {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.menu-hand-cursor-progress {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.menu-hand-cursor-track {
+  fill: none;
+  stroke: rgba(168, 212, 232, 0.45);
+  stroke-width: 3;
+}
+
+.menu-hand-cursor-fill {
+  fill: none;
+  stroke: #c9852a;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: calc(1 - var(--menu-dwell, 0));
+  opacity: calc(0.35 + var(--menu-dwell, 0) * 0.65);
+}
+
+.menu-hand-cursor-dot {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  border-radius: 50%;
+  background: #a8d4e8;
+  box-shadow: 0 0 10px rgba(168, 212, 232, 0.75);
+}
+
+.menu-dwell-target {
+  outline: 2px solid rgba(201, 133, 42, 0.85) !important;
+  outline-offset: 3px;
+  box-shadow: 0 0 16px rgba(201, 133, 42, 0.45) !important;
+}
+
 .menu-overlay {
   --menu-text: #f5ead6;
   --menu-text-muted: rgba(235, 218, 190, 0.62);

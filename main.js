@@ -811,6 +811,7 @@ const btnBackMenu = document.getElementById('btn-back-menu');
 const btnStart = document.getElementById('btn-start');
 const trackingDisplay = document.getElementById('tracking-display');
 const loadingText = document.getElementById('loading-text');
+const menuHandCursor = document.getElementById('menu-hand-cursor');
 const mugTimersPanel = document.getElementById('mug-timers');
 const mugTimerRows = [0, 1].map((pi) => ({
     row: document.getElementById(`mug-timer-p${pi}`),
@@ -1276,6 +1277,183 @@ function isMainMenuVisible() {
     return Boolean(mainMenu && !mainMenu.classList.contains('is-hidden'));
 }
 
+const MENU_HAND_DWELL_MS = 2000;
+const MENU_HAND_MIN_VISIBILITY = 0.35;
+const MENU_HAND_ACTIVATE_COOLDOWN_MS = 700;
+
+let menuHandTrackingActive = false;
+let menuHandDwellEl = null;
+let menuHandDwellSinceMs = 0;
+let menuHandActivateCooldownUntilMs = 0;
+
+function getVideoCoverLayout() {
+    const vRatio = canvasElement.width / video.videoWidth;
+    const hRatio = canvasElement.height / video.videoHeight;
+    const ratio = Math.max(vRatio, hRatio);
+    return {
+        ratio,
+        centerShiftX: (canvasElement.width - video.videoWidth * ratio) / 2,
+        centerShiftY: (canvasElement.height - video.videoHeight * ratio) / 2
+    };
+}
+
+function landmarkToCanvasPoint(landmark, layout) {
+    return {
+        x: landmark.x * video.videoWidth * layout.ratio + layout.centerShiftX,
+        y: landmark.y * video.videoHeight * layout.ratio + layout.centerShiftY
+    };
+}
+
+/** Координаты на экране с учётом зеркала canvas (scaleX(-1)). */
+function canvasPointToClient(canvasX, canvasY) {
+    const rect = canvasElement.getBoundingClientRect();
+    const nx = canvasX / canvasElement.width;
+    const ny = canvasY / canvasElement.height;
+    return {
+        x: rect.left + (1 - nx) * rect.width,
+        y: rect.top + ny * rect.height
+    };
+}
+
+function pickMenuHandClientPoint(landmarks) {
+    if (!landmarks?.length) return null;
+    const layout = getVideoCoverLayout();
+    const wrists = [landmarks[15], landmarks[16]];
+    let best = null;
+    for (const lm of wrists) {
+        if (!lm) continue;
+        const vis = lm.visibility ?? 1;
+        if (vis < MENU_HAND_MIN_VISIBILITY) continue;
+        if (!best || vis > best.vis) best = { lm, vis };
+    }
+    if (!best) return null;
+    const canvasPt = landmarkToCanvasPoint(best.lm, layout);
+    return canvasPointToClient(canvasPt.x, canvasPt.y);
+}
+
+function findMenuInteractiveTarget(clientX, clientY) {
+    if (!isMainMenuVisible()) return null;
+    const el = document.elementFromPoint(clientX, clientY);
+    if (!el) return null;
+    const inMenu = el.closest('#main-menu:not(.is-hidden), .ui-top-controls');
+    if (!inMenu) return null;
+    const hit = el.closest(
+        'button:not([disabled]), a[href], label.ui-lang-pill, label.menu-option-toggle'
+    );
+    return hit ?? null;
+}
+
+function clearMenuHandDwellHighlight() {
+    if (menuHandDwellEl) menuHandDwellEl.classList.remove('menu-dwell-target');
+    menuHandDwellEl = null;
+    menuHandDwellSinceMs = 0;
+}
+
+function setMenuHandCursor(clientX, clientY, dwellProgress) {
+    if (!menuHandCursor) return;
+    menuHandCursor.style.setProperty('--menu-cursor-x', `${clientX}px`);
+    menuHandCursor.style.setProperty('--menu-cursor-y', `${clientY}px`);
+    menuHandCursor.style.setProperty('--menu-dwell', String(Math.min(1, Math.max(0, dwellProgress))));
+}
+
+function activateMenuHandTarget(el) {
+    if (!el) return;
+    if (el.matches('label.ui-lang-pill')) {
+        el.querySelector('input')?.click();
+        return;
+    }
+    if (el.matches('label.menu-option-toggle')) {
+        const cb = el.querySelector('input[type="checkbox"]');
+        if (cb) {
+            cb.checked = !cb.checked;
+            cb.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        return;
+    }
+    el.click();
+}
+
+function updateMenuHandTracking(nowMs) {
+    if (!menuHandTrackingActive || !isMainMenuVisible() || backgroundSuspended) return;
+
+    let clientPt = null;
+    if (currentPoseResults?.landmarks?.[0]) {
+        clientPt = pickMenuHandClientPoint(currentPoseResults.landmarks[0]);
+    }
+
+    if (!clientPt) {
+        clearMenuHandDwellHighlight();
+        menuHandCursor?.classList.add('is-hidden');
+        return;
+    }
+
+    menuHandCursor?.classList.remove('is-hidden');
+    const target = findMenuInteractiveTarget(clientPt.x, clientPt.y);
+
+    if (!target || nowMs < menuHandActivateCooldownUntilMs) {
+        clearMenuHandDwellHighlight();
+        setMenuHandCursor(clientPt.x, clientPt.y, 0);
+        return;
+    }
+
+    if (target !== menuHandDwellEl) {
+        if (menuHandDwellEl) menuHandDwellEl.classList.remove('menu-dwell-target');
+        menuHandDwellEl = target;
+        menuHandDwellSinceMs = nowMs;
+        target.classList.add('menu-dwell-target');
+    }
+
+    const elapsed = nowMs - menuHandDwellSinceMs;
+    const progress = elapsed / MENU_HAND_DWELL_MS;
+    setMenuHandCursor(clientPt.x, clientPt.y, progress);
+
+    if (elapsed >= MENU_HAND_DWELL_MS) {
+        activateMenuHandTarget(target);
+        menuHandActivateCooldownUntilMs = nowMs + MENU_HAND_ACTIVATE_COOLDOWN_MS;
+        clearMenuHandDwellHighlight();
+        setMenuHandCursor(clientPt.x, clientPt.y, 0);
+    }
+}
+
+function menuHandTrackingLoop(nowMs) {
+    if (!menuHandTrackingActive) return;
+    if (!isMainMenuVisible() || backgroundSuspended) {
+        stopMenuHandTracking();
+        return;
+    }
+
+    if (lastVideoTime !== video.currentTime && poseLandmarker) {
+        lastVideoTime = video.currentTime;
+        const rawTsMs = Number.isFinite(video.currentTime) ? video.currentTime * 1000 : nowMs;
+        poseDetectTsMs = Math.max(poseDetectTsMs + 1, rawTsMs);
+        try {
+            const pRes = poseLandmarker.detectForVideo(video, poseDetectTsMs);
+            if (pRes) currentPoseResults = pRes;
+        } catch (err) {
+            console.warn('Menu hand tracking detectForVideo:', err);
+        }
+    }
+
+    updateMenuHandTracking(nowMs);
+    requestAnimationFrame(menuHandTrackingLoop);
+}
+
+function startMenuHandTracking() {
+    if (menuHandTrackingActive || !isMainMenuVisible() || backgroundSuspended) return;
+    menuHandTrackingActive = true;
+    menuHandActivateCooldownUntilMs = 0;
+    clearMenuHandDwellHighlight();
+    void video.play().catch(() => {});
+    requestAnimationFrame(menuHandTrackingLoop);
+}
+
+function stopMenuHandTracking() {
+    menuHandTrackingActive = false;
+    clearMenuHandDwellHighlight();
+    menuHandCursor?.classList.add('is-hidden');
+    if (menuHandCursor) menuHandCursor.style.setProperty('--menu-dwell', '0');
+}
+
 function suspendAppForBackground() {
     if (backgroundSuspended) return;
     backgroundSuspended = true;
@@ -1289,6 +1467,7 @@ function suspendAppForBackground() {
         isPlaying = false;
         pauseGameMusicSoft();
     } else {
+        stopMenuHandTracking();
         pauseMenuMusicSoft();
         if (menuDropsAnimating) stopMenuDrops();
     }
@@ -1321,6 +1500,10 @@ function resumeAppFromBackground() {
     resumeSharedAudioContext();
     if (resumeMenuMusicAfterBackground) resumeMenuMusicSoft();
     if (resumeMenuDropsAfterBackground) startMenuDrops();
+    if (isMainMenuVisible()) {
+        void video.play().catch(() => {});
+        startMenuHandTracking();
+    }
     resumeMenuMusicAfterBackground = false;
     resumeMenuDropsAfterBackground = false;
 }
@@ -1415,6 +1598,7 @@ function triggerGameOver() {
 
 function showMainMenu() {
     isPlaying = false;
+    stopMenuHandTracking();
     stopGameMusic();
     cancelSpeech();
     gameOverOverlay?.classList.add('is-hidden');
@@ -1428,13 +1612,14 @@ function showMainMenu() {
     updateMugTimerHud([], performance.now());
     canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
     canvasElement.style.visibility = 'hidden';
-    void video.pause();
     playMenuMusic();
     startMenuDrops();
+    startMenuHandTracking();
 }
 
 function startGame() {
     tryUnlockAudioOnUserGesture();
+    stopMenuHandTracking();
     refreshTrackTuning();
     if (trackTuning.mobile) {
         console.info('[RoofLeak] mobile tracking tuning active', trackTuning);
