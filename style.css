@@ -712,11 +712,32 @@ canvas {
   line-height: 1;
 }
 
-.menu-settings-row {
+.menu-bottom-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.65rem;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: 0.6rem;
   margin-top: 1.1rem;
+  align-items: stretch;
+}
+
+.menu-side-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.menu-side-settings .menu-setting-block {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+@media (max-width: 520px) {
+  .menu-bottom-row {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 420px) {
@@ -735,8 +756,16 @@ canvas {
     font-size: 0.78rem;
   }
 
-  .menu-settings-row {
+  .menu-bottom-row {
     grid-template-columns: 1fr;
+  }
+
+  .menu-side-settings {
+    flex-direction: row;
+  }
+
+  .menu-side-settings .menu-setting-block {
+    flex: 1;
   }
 }
 
@@ -785,6 +814,82 @@ canvas {
   opacity: 0.65;
   margin-bottom: 1.25rem;
   line-height: 1.4;
+}
+
+.menu-options-compact {
+  padding: 0.65rem 0.75rem;
+  min-height: 100%;
+}
+
+.menu-options-compact .menu-options-title {
+  margin-bottom: 0.4rem;
+  font-size: 0.62rem;
+}
+
+.menu-options-compact .menu-volume-row {
+  margin-bottom: 0.45rem;
+  padding-bottom: 0.45rem;
+}
+
+.menu-options-compact .menu-volume-label {
+  margin-bottom: 0.35rem;
+}
+
+.menu-options-compact .menu-volume-title,
+.menu-options-compact .menu-volume-value {
+  font-size: 0.78rem;
+}
+
+.menu-options-compact .menu-volume-slider {
+  height: 0.38rem;
+}
+
+.menu-options-compact .menu-options-toggles {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.menu-options-compact .menu-option-toggle {
+  margin-bottom: 0;
+  padding: 0.38rem 0.45rem;
+  border-radius: 10px;
+  gap: 0.45rem;
+}
+
+.menu-options-compact .menu-option-left {
+  gap: 0.45rem;
+}
+
+.menu-options-compact .menu-option-emoji {
+  width: 1.85rem;
+  height: 1.85rem;
+  font-size: 1.05rem;
+}
+
+.menu-options-compact .menu-option-title {
+  font-size: 0.76rem;
+}
+
+.menu-options-compact .menu-option-desc {
+  display: none;
+}
+
+.menu-options-compact .menu-option-switch {
+  width: 2.15rem;
+  height: 1.2rem;
+  flex-shrink: 0;
+}
+
+.menu-options-compact .menu-option-knob {
+  top: 2px;
+  left: 2px;
+  width: 0.92rem;
+  height: 0.92rem;
+}
+
+.menu-options-compact .menu-option-toggle:not(:has(.menu-option-input:checked)) .menu-option-knob {
+  transform: translateX(0.95rem);
 }
 
 .menu-options {

@@ -72,79 +72,83 @@
                 Галерея игр
               </a>
             </div>
-            <div class="menu-options" role="group" aria-label="Опции">
-              <div id="menu-options-title" class="menu-options-title">Звук и музыка</div>
-              <div class="menu-volume-row">
-                <label for="opt-volume" class="menu-volume-label">
-                  <span id="menu-volume-title" class="menu-volume-title">Громкость</span>
-                  <span id="opt-volume-value" class="menu-volume-value">100%</span>
-                </label>
-                <input
-                  type="range"
-                  id="opt-volume"
-                  class="menu-volume-slider"
-                  min="0"
-                  max="100"
-                  step="1"
-                  value="100"
-                  aria-valuemin="0"
-                  aria-valuemax="100"
-                  aria-valuenow="100"
-                />
-              </div>
-              <label class="menu-option-toggle">
-                <input type="checkbox" id="opt-sound-off" class="menu-option-input" aria-label="Отключить звуки в игре" />
-                <span class="menu-option-left">
-                  <span class="menu-option-emoji" aria-hidden="true">
-                    <span class="menu-option-emoji-on">🔊</span>
-                    <span class="menu-option-emoji-off">🔇</span>
-                  </span>
-                  <span class="menu-option-text">
-                    <span id="menu-sounds-title" class="menu-option-title">Звуки в игре</span>
-                  </span>
-                </span>
-                <span class="menu-option-switch" aria-hidden="true"><span class="menu-option-knob"></span></span>
-              </label>
-              <label class="menu-option-toggle">
-                <input type="checkbox" id="opt-music-off" class="menu-option-input" aria-label="Отключить музыку" />
-                <span class="menu-option-left">
-                  <span class="menu-option-emoji" aria-hidden="true">
-                    <span class="menu-option-emoji-on">🎵</span>
-                    <span class="menu-option-emoji-off">🔇</span>
-                  </span>
-                  <span class="menu-option-text">
-                    <span id="menu-music-title" class="menu-option-title">Музыка</span>
-                    <span id="menu-music-desc" class="menu-option-desc">Меню и игра</span>
-                  </span>
-                </span>
-                <span class="menu-option-switch" aria-hidden="true"><span class="menu-option-knob"></span></span>
-              </label>
-            </div>
-            <div class="menu-settings-row">
-              <div id="ui-lang-picker" class="menu-setting-block" role="radiogroup" aria-labelledby="menu-lang-label">
-                <div id="menu-lang-label" class="menu-setting-label">Язык</div>
-                <div class="ui-lang-segment">
-                  <label class="ui-lang-pill">
-                    <input type="radio" name="roof-leak-lang" id="opt-lang-ru" value="ru" checked />
-                    <span id="opt-lang-ru-label">RU</span>
+            <div class="menu-bottom-row">
+              <div class="menu-options menu-options-compact" role="group" aria-label="Опции">
+                <div id="menu-options-title" class="menu-options-title">Звук и музыка</div>
+                <div class="menu-volume-row">
+                  <label for="opt-volume" class="menu-volume-label">
+                    <span id="menu-volume-title" class="menu-volume-title">Громкость</span>
+                    <span id="opt-volume-value" class="menu-volume-value">100%</span>
                   </label>
-                  <label class="ui-lang-pill">
-                    <input type="radio" name="roof-leak-lang" id="opt-lang-en" value="en" />
-                    <span id="opt-lang-en-label">EN</span>
+                  <input
+                    type="range"
+                    id="opt-volume"
+                    class="menu-volume-slider"
+                    min="0"
+                    max="100"
+                    step="1"
+                    value="100"
+                    aria-valuemin="0"
+                    aria-valuemax="100"
+                    aria-valuenow="100"
+                  />
+                </div>
+                <div class="menu-options-toggles">
+                  <label class="menu-option-toggle">
+                    <input type="checkbox" id="opt-sound-off" class="menu-option-input" aria-label="Отключить звуки в игре" />
+                    <span class="menu-option-left">
+                      <span class="menu-option-emoji" aria-hidden="true">
+                        <span class="menu-option-emoji-on">🔊</span>
+                        <span class="menu-option-emoji-off">🔇</span>
+                      </span>
+                      <span class="menu-option-text">
+                        <span id="menu-sounds-title" class="menu-option-title">Звуки в игре</span>
+                      </span>
+                    </span>
+                    <span class="menu-option-switch" aria-hidden="true"><span class="menu-option-knob"></span></span>
+                  </label>
+                  <label class="menu-option-toggle">
+                    <input type="checkbox" id="opt-music-off" class="menu-option-input" aria-label="Отключить музыку" />
+                    <span class="menu-option-left">
+                      <span class="menu-option-emoji" aria-hidden="true">
+                        <span class="menu-option-emoji-on">🎵</span>
+                        <span class="menu-option-emoji-off">🔇</span>
+                      </span>
+                      <span class="menu-option-text">
+                        <span id="menu-music-title" class="menu-option-title">Музыка</span>
+                        <span id="menu-music-desc" class="menu-option-desc">Меню и игра</span>
+                      </span>
+                    </span>
+                    <span class="menu-option-switch" aria-hidden="true"><span class="menu-option-knob"></span></span>
                   </label>
                 </div>
               </div>
-              <div id="ui-players-picker" class="menu-setting-block" role="radiogroup" aria-labelledby="menu-player-label">
-                <div id="menu-player-label" class="menu-setting-label">Игроки</div>
-                <div class="ui-lang-segment">
-                  <label class="ui-lang-pill">
-                    <input type="radio" name="roof-leak-players" id="opt-players-1" value="1" />
-                    <span id="opt-players-1-label">1</span>
-                  </label>
-                  <label class="ui-lang-pill">
-                    <input type="radio" name="roof-leak-players" id="opt-players-2" value="2" checked />
-                    <span id="opt-players-2-label">2</span>
-                  </label>
+              <div class="menu-side-settings">
+                <div id="ui-lang-picker" class="menu-setting-block" role="radiogroup" aria-labelledby="menu-lang-label">
+                  <div id="menu-lang-label" class="menu-setting-label">Язык</div>
+                  <div class="ui-lang-segment">
+                    <label class="ui-lang-pill">
+                      <input type="radio" name="roof-leak-lang" id="opt-lang-ru" value="ru" checked />
+                      <span id="opt-lang-ru-label">RU</span>
+                    </label>
+                    <label class="ui-lang-pill">
+                      <input type="radio" name="roof-leak-lang" id="opt-lang-en" value="en" />
+                      <span id="opt-lang-en-label">EN</span>
+                    </label>
+                  </div>
+                </div>
+                <div id="ui-players-picker" class="menu-setting-block" role="radiogroup" aria-labelledby="menu-player-label">
+                  <div id="menu-player-label" class="menu-setting-label">Игроки</div>
+                  <div class="ui-lang-segment">
+                    <label class="ui-lang-pill">
+                      <input type="radio" name="roof-leak-players" id="opt-players-1" value="1" />
+                      <span id="opt-players-1-label">1</span>
+                    </label>
+                    <label class="ui-lang-pill">
+                      <input type="radio" name="roof-leak-players" id="opt-players-2" value="2" checked />
+                      <span id="opt-players-2-label">2</span>
+                    </label>
+                  </div>
                 </div>
               </div>
             </div>

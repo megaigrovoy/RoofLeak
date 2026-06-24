@@ -1813,7 +1813,7 @@ mainMenu.addEventListener(
         if (e.target?.closest?.('#ui-lang-picker')) return;
         if (e.target?.closest?.('#ui-players-picker')) return;
         if (e.target?.closest?.('.menu-options')) return;
-        if (e.target?.closest?.('.menu-settings-row')) return;
+        if (e.target?.closest?.('.menu-bottom-row')) return;
         playMenuMusic();
     },
     { capture: true }
