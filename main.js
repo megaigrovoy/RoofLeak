@@ -20,6 +20,8 @@ const I18N = {
         langRu: 'RU',
         langEn: 'EN',
         play: 'Играть',
+        galleryLink: '← Галерея игр',
+        galleryLinkAria: 'Перейти в галерею игр BlagoGames',
         optionsAria: 'Опции',
         soundSection: 'Звук и музыка',
         volume: 'Громкость',
@@ -80,6 +82,8 @@ const I18N = {
         langRu: 'RU',
         langEn: 'EN',
         play: 'Play',
+        galleryLink: '← Games gallery',
+        galleryLinkAria: 'Go to BlagoGames games gallery',
         optionsAria: 'Options',
         soundSection: 'Sound & music',
         volume: 'Volume',
@@ -1175,6 +1179,7 @@ function applyUiLanguage() {
     setText('menu-music-title', 'music');
     setText('menu-music-desc', 'musicDesc');
     if (btnStart) btnStart.textContent = t('play');
+    setText('btn-gallery', 'galleryLink');
     if (btnBackMenu) btnBackMenu.textContent = t('menu');
     if (loadingText) loadingText.textContent = t('loadingModels');
 
@@ -1186,6 +1191,8 @@ function applyUiLanguage() {
 
     const menuOptions = document.querySelector('.menu-options');
     if (menuOptions) menuOptions.setAttribute('aria-label', t('optionsAria'));
+    const btnGallery = document.getElementById('btn-gallery');
+    if (btnGallery) btnGallery.setAttribute('aria-label', t('galleryLinkAria'));
     if (optSoundOff) optSoundOff.setAttribute('aria-label', t('gameSoundsAria'));
     if (optMusicOff) optMusicOff.setAttribute('aria-label', t('musicAria'));
     if (btnFullscreen) btnFullscreen.setAttribute('aria-label', t('fullscreen'));

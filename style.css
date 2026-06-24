@@ -690,6 +690,30 @@ canvas {
   line-height: 1.4;
 }
 
+.menu-gallery-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 1.15rem;
+  font-size: 0.88rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--menu-text-muted);
+  text-decoration: none;
+  transition: color 0.14s ease, text-shadow 0.14s ease;
+}
+
+.menu-gallery-link:hover {
+  color: var(--menu-water-bright);
+  text-shadow: 0 0 10px var(--menu-glow-water);
+}
+
+.menu-gallery-link:focus-visible {
+  outline: 2px solid var(--menu-water-bright);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
 .menu-options {
   text-align: left;
   margin-top: 1.25rem;
