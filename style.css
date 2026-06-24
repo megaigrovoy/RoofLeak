@@ -32,15 +32,21 @@ body, html {
   user-select: none;
 }
 
-.btn-fullscreen.needs-tap {
-  animation: fullscreen-needs-tap 0.5s ease-in-out 0s 3;
-  box-shadow: 0 0 0 2px rgba(126, 180, 204, 0.9), 0 0 18px rgba(126, 180, 204, 0.55);
+html.is-pseudo-fullscreen,
+html.is-pseudo-fullscreen body {
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
 }
 
-@keyframes fullscreen-needs-tap {
-  0%, 100% { transform: translateY(0); }
-  25% { transform: translateY(-3px); }
-  75% { transform: translateY(2px); }
+#game-container.is-pseudo-fullscreen {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100dvh !important;
+  max-width: none !important;
+  margin: 0 !important;
+  z-index: 2147483646;
 }
 
 video {

@@ -32,7 +32,6 @@ const I18N = {
         musicAria: 'Отключить музыку',
         fullscreen: 'На весь экран',
         exitFullscreen: 'Свернуть',
-        fullscreenTapHint: 'Коснитесь экрана пальцем',
         menu: 'Меню',
         score: 'Поймано: {n}',
         waterMeterAria: 'Уровень воды на полу',
@@ -95,7 +94,6 @@ const I18N = {
         musicAria: 'Disable music',
         fullscreen: 'Fullscreen',
         exitFullscreen: 'Exit fullscreen',
-        fullscreenTapHint: 'Tap the screen to go fullscreen',
         menu: 'Menu',
         score: 'Caught: {n}',
         waterMeterAria: 'Water level on the floor',
@@ -1776,51 +1774,34 @@ btnBackMenu?.addEventListener('click', () => showMainMenu());
 const gameContainer = document.getElementById('game-container');
 const btnFullscreen = document.getElementById('btn-fullscreen');
 const btnFullscreenLabel = btnFullscreen?.querySelector('.btn-fullscreen-label');
-// Браузеры включают настоящий полноэкранный режим только в ответ на реальный
-// жест (касание/клик). Трекинг руки жестом не считается, поэтому fullscreen
-// включаем автоматически на первом касании экрана, а руке оставляем выход.
-let fullscreenAutoDone = false;
-let fullscreenUserExited = false;
-let fullscreenHintTimer = 0;
+let pseudoFullscreenActive = false;
 
 function getCurrentFullscreenElement() {
     return document.fullscreenElement || document.webkitFullscreenElement || null;
 }
 
-function requestFullscreenOn(el) {
-    if (!el) return null;
-    if (el.requestFullscreen) return el.requestFullscreen({ navigationUI: 'hide' });
-    if (el.webkitRequestFullscreen) { el.webkitRequestFullscreen(); return Promise.resolve(); }
-    return null;
+function isEffectiveFullscreen() {
+    return !!getCurrentFullscreenElement() || pseudoFullscreenActive;
 }
 
-function maybeAutoEnterFullscreen() {
-    if (fullscreenAutoDone || fullscreenUserExited) return;
-    if (getCurrentFullscreenElement()) { fullscreenAutoDone = true; return; }
-    const el = gameContainer || document.documentElement;
-    try {
-        const p = requestFullscreenOn(el);
-        if (p && typeof p.then === 'function') {
-            p.then(() => { fullscreenAutoDone = true; syncFullscreenButton(); }).catch(() => {});
-        } else if (p !== null) {
-            fullscreenAutoDone = true;
-            syncFullscreenButton();
-        }
-    } catch (_) {}
+function enterPseudoFullscreen() {
+    if (pseudoFullscreenActive) return;
+    pseudoFullscreenActive = true;
+    document.documentElement.classList.add('is-pseudo-fullscreen');
+    gameContainer?.classList.add('is-pseudo-fullscreen');
+    lastResizeW = 0;
+    lastResizeH = 0;
+    resizeCanvas();
 }
 
-function showFullscreenTapHint() {
-    if (!btnFullscreen) return;
-    btnFullscreen.classList.add('needs-tap');
-    if (btnFullscreenLabel) btnFullscreenLabel.textContent = t('fullscreenTapHint');
-    if (fullscreenHintTimer) clearTimeout(fullscreenHintTimer);
-    fullscreenHintTimer = setTimeout(() => {
-        btnFullscreen.classList.remove('needs-tap');
-        if (btnFullscreenLabel && !getCurrentFullscreenElement()) {
-            btnFullscreenLabel.textContent = t('fullscreen');
-        }
-        fullscreenHintTimer = 0;
-    }, 2200);
+function exitPseudoFullscreen() {
+    if (!pseudoFullscreenActive) return;
+    pseudoFullscreenActive = false;
+    document.documentElement.classList.remove('is-pseudo-fullscreen');
+    gameContainer?.classList.remove('is-pseudo-fullscreen');
+    lastResizeW = 0;
+    lastResizeH = 0;
+    resizeCanvas();
 }
 
 async function enterFullscreen() {
@@ -1849,31 +1830,28 @@ async function exitFullscreen() {
 }
 
 async function toggleFullscreen({ fromHand = false } = {}) {
-    // Выход из полноэкранного режима жеста не требует — работает и с руки.
-    if (getCurrentFullscreenElement()) {
-        fullscreenUserExited = true;
-        await exitFullscreen();
+    if (isEffectiveFullscreen()) {
+        if (getCurrentFullscreenElement()) await exitFullscreen();
+        exitPseudoFullscreen();
         syncFullscreenButton();
         return;
     }
 
-    // Вход — только по реальному жесту. Руке показываем подсказку.
     if (fromHand) {
-        showFullscreenTapHint();
+        enterPseudoFullscreen();
+        syncFullscreenButton();
         return;
     }
 
-    fullscreenUserExited = false;
-    fullscreenAutoDone = true;
     await enterFullscreen();
+    if (!getCurrentFullscreenElement()) enterPseudoFullscreen();
     syncFullscreenButton();
 }
 
 function syncFullscreenButton() {
     if (!btnFullscreen) return;
-    const isFs = !!getCurrentFullscreenElement();
+    const isFs = isEffectiveFullscreen();
     btnFullscreen.classList.toggle('is-active', isFs);
-    if (isFs) btnFullscreen.classList.remove('needs-tap');
     if (btnFullscreenLabel) btnFullscreenLabel.textContent = isFs ? t('exitFullscreen') : t('fullscreen');
 }
 
@@ -1884,14 +1862,16 @@ if (btnFullscreen) {
         e.stopPropagation();
         void toggleFullscreen({ fromHand: false });
     });
-    document.addEventListener('fullscreenchange', syncFullscreenButton);
-    document.addEventListener('webkitfullscreenchange', syncFullscreenButton);
+    document.addEventListener('fullscreenchange', () => {
+        if (!getCurrentFullscreenElement() && pseudoFullscreenActive) return;
+        syncFullscreenButton();
+    });
+    document.addEventListener('webkitfullscreenchange', () => {
+        if (!getCurrentFullscreenElement() && pseudoFullscreenActive) return;
+        syncFullscreenButton();
+    });
     syncFullscreenButton();
 }
-
-// Первое реальное касание/клик где угодно по странице переводит игру в
-// настоящий полноэкранный режим (если пользователь сам его не выключал).
-document.addEventListener('pointerdown', maybeAutoEnterFullscreen, { capture: true });
 
 mainMenu.addEventListener(
     'pointerdown',
