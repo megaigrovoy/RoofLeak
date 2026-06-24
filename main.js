@@ -1474,12 +1474,14 @@ function updateMenuHandTracking(nowMs) {
     }
 
     menuHandCursor?.classList.remove('is-hidden');
+    // Курсор рисуем там же, где проверяем попадание, чтобы клик совпадал с тем,
+    // что видит пользователь (важно для маленьких кнопок: Fullscreen, Галерея).
     const hitPt = getMenuHandHitPoint(clientPt);
     const target = findMenuInteractiveTarget(hitPt.x, hitPt.y);
 
     if (!target || nowMs < menuHandActivateCooldownUntilMs) {
         clearMenuHandDwellHighlight();
-        setMenuHandCursor(clientPt.x, clientPt.y, 0);
+        setMenuHandCursor(hitPt.x, hitPt.y, 0);
         return;
     }
 
@@ -1492,13 +1494,13 @@ function updateMenuHandTracking(nowMs) {
 
     const elapsed = nowMs - menuHandDwellSinceMs;
     const progress = elapsed / MENU_HAND_DWELL_MS;
-    setMenuHandCursor(clientPt.x, clientPt.y, progress);
+    setMenuHandCursor(hitPt.x, hitPt.y, progress);
 
     if (elapsed >= MENU_HAND_DWELL_MS) {
         activateMenuHandTarget(target);
         menuHandActivateCooldownUntilMs = nowMs + MENU_HAND_ACTIVATE_COOLDOWN_MS;
         clearMenuHandDwellHighlight();
-        setMenuHandCursor(clientPt.x, clientPt.y, 0);
+        setMenuHandCursor(hitPt.x, hitPt.y, 0);
     }
 }
 
