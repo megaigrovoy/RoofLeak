@@ -812,7 +812,6 @@ const btnStart = document.getElementById('btn-start');
 const trackingDisplay = document.getElementById('tracking-display');
 const loadingText = document.getElementById('loading-text');
 const menuHandCursor = document.getElementById('menu-hand-cursor');
-const menuHandCursorImg = document.getElementById('menu-hand-cursor-img');
 const mugTimersPanel = document.getElementById('mug-timers');
 const mugTimerRows = [0, 1].map((pi) => ({
     row: document.getElementById(`mug-timer-p${pi}`),
@@ -1354,8 +1353,7 @@ function pickMenuHandRawPoint(landmarks) {
 
     const canvasPt = landmarkToCanvasPoint(chosen.lm, layout);
     const client = canvasPointToClient(canvasPt.x, canvasPt.y);
-    const screenSide = canvasPt.x >= canvasElement.width * 0.5 ? 'left' : 'right';
-    return { x: client.x, y: client.y, screenSide };
+    return { x: client.x, y: client.y };
 }
 
 function resetMenuHandSmoothing() {
@@ -1370,7 +1368,7 @@ function ingestMenuHandRawPoint(raw) {
         return;
     }
     if (!menuHandPoseSmooth) {
-        menuHandPoseSmooth = { x: raw.x, y: raw.y, screenSide: raw.screenSide };
+        menuHandPoseSmooth = { x: raw.x, y: raw.y };
         return;
     }
     const dist = Math.hypot(raw.x - menuHandPoseSmooth.x, raw.y - menuHandPoseSmooth.y);
@@ -1382,7 +1380,6 @@ function ingestMenuHandRawPoint(raw) {
         menuHandPoseSmooth.x = menuHandPoseSmooth.x * (1 - a) + raw.x * a;
         menuHandPoseSmooth.y = menuHandPoseSmooth.y * (1 - a) + raw.y * a;
     }
-    menuHandPoseSmooth.screenSide = raw.screenSide;
 }
 
 function getMenuHandDisplayPoint() {
@@ -1394,7 +1391,6 @@ function getMenuHandDisplayPoint() {
     const a = MENU_HAND_DISPLAY_SMOOTH_ALPHA;
     menuHandDisplay.x += (menuHandPoseSmooth.x - menuHandDisplay.x) * a;
     menuHandDisplay.y += (menuHandPoseSmooth.y - menuHandDisplay.y) * a;
-    menuHandDisplay.screenSide = menuHandPoseSmooth.screenSide;
     return menuHandDisplay;
 }
 
@@ -1416,20 +1412,11 @@ function clearMenuHandDwellHighlight() {
     menuHandDwellSinceMs = 0;
 }
 
-function setMenuHandCursor(clientX, clientY, dwellProgress, screenSide) {
+function setMenuHandCursor(clientX, clientY, dwellProgress) {
     if (!menuHandCursor) return;
     menuHandCursor.style.setProperty('--menu-cursor-x', `${clientX}px`);
     menuHandCursor.style.setProperty('--menu-cursor-y', `${clientY}px`);
     menuHandCursor.style.setProperty('--menu-dwell', String(Math.min(1, Math.max(0, dwellProgress))));
-    menuHandCursor.classList.toggle('is-screen-left', screenSide === 'left');
-    menuHandCursor.classList.toggle('is-screen-right', screenSide === 'right');
-    if (menuHandCursorImg) {
-        const nextSrc = screenSide === 'left' ? HAND_R_IMG_URL : HAND_L_IMG_URL;
-        if (menuHandCursorImg.dataset.side !== screenSide) {
-            menuHandCursorImg.src = nextSrc;
-            menuHandCursorImg.dataset.side = screenSide;
-        }
-    }
 }
 
 function activateMenuHandTarget(el) {
@@ -1465,7 +1452,7 @@ function updateMenuHandTracking(nowMs) {
 
     if (!target || nowMs < menuHandActivateCooldownUntilMs) {
         clearMenuHandDwellHighlight();
-        setMenuHandCursor(clientPt.x, clientPt.y, 0, clientPt.screenSide);
+        setMenuHandCursor(clientPt.x, clientPt.y, 0);
         return;
     }
 
@@ -1478,13 +1465,13 @@ function updateMenuHandTracking(nowMs) {
 
     const elapsed = nowMs - menuHandDwellSinceMs;
     const progress = elapsed / MENU_HAND_DWELL_MS;
-    setMenuHandCursor(clientPt.x, clientPt.y, progress, clientPt.screenSide);
+    setMenuHandCursor(clientPt.x, clientPt.y, progress);
 
     if (elapsed >= MENU_HAND_DWELL_MS) {
         activateMenuHandTarget(target);
         menuHandActivateCooldownUntilMs = nowMs + MENU_HAND_ACTIVATE_COOLDOWN_MS;
         clearMenuHandDwellHighlight();
-        setMenuHandCursor(clientPt.x, clientPt.y, 0, clientPt.screenSide);
+        setMenuHandCursor(clientPt.x, clientPt.y, 0);
     }
 }
 
