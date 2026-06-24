@@ -1280,6 +1280,8 @@ function isMainMenuVisible() {
 const MENU_HAND_DWELL_MS = 1000;
 const MENU_HAND_MIN_VISIBILITY = 0.35;
 const MENU_HAND_ACTIVATE_COOLDOWN_MS = 700;
+/** Смещение hit-test от запястья к ладони (px, вверх по экрану). */
+const MENU_HAND_HIT_OFFSET_Y = -46;
 const MENU_HAND_POSE_SMOOTH_ALPHA = 0.14;
 const MENU_HAND_DISPLAY_SMOOTH_ALPHA = 0.26;
 const MENU_HAND_TELEPORT_PX = 50;
@@ -1394,15 +1396,33 @@ function getMenuHandDisplayPoint() {
     return menuHandDisplay;
 }
 
+function getMenuHandHitPoint(clientPt) {
+    return {
+        x: clientPt.x,
+        y: clientPt.y + MENU_HAND_HIT_OFFSET_Y
+    };
+}
+
+function resolveMenuHandTarget(el) {
+    if (!el) return null;
+    const fullscreenBtn = el.closest('#btn-fullscreen');
+    if (fullscreenBtn) return fullscreenBtn;
+    const galleryBtn = el.closest('#btn-gallery');
+    if (galleryBtn) return galleryBtn;
+    const startBtn = el.closest('#btn-start');
+    if (startBtn) return startBtn;
+    return el.closest(
+        'button:not([disabled]), a[href], label.ui-lang-pill, label.menu-option-toggle'
+    );
+}
+
 function findMenuInteractiveTarget(clientX, clientY) {
     if (!isMainMenuVisible()) return null;
-    const selectors =
-        'button:not([disabled]), a[href], label.ui-lang-pill, label.menu-option-toggle';
     for (const el of document.elementsFromPoint(clientX, clientY)) {
         if (el.closest('#menu-hand-cursor')) continue;
         const inMenu = el.closest('#main-menu:not(.is-hidden)');
         if (!inMenu) continue;
-        const hit = el.closest(selectors);
+        const hit = resolveMenuHandTarget(el);
         if (hit) return hit;
     }
     return null;
@@ -1424,8 +1444,7 @@ function setMenuHandCursor(clientX, clientY, dwellProgress) {
 function activateMenuHandTarget(el) {
     if (!el) return;
     if (el.id === 'btn-fullscreen' || el.closest('#btn-fullscreen')) {
-        if (getCurrentFullscreenElement()) void exitFullscreen();
-        else void enterFullscreen();
+        void toggleFullscreen({ fromHand: true });
         return;
     }
     if (el.matches('label.ui-lang-pill')) {
@@ -1455,7 +1474,8 @@ function updateMenuHandTracking(nowMs) {
     }
 
     menuHandCursor?.classList.remove('is-hidden');
-    const target = findMenuInteractiveTarget(clientPt.x, clientPt.y);
+    const hitPt = getMenuHandHitPoint(clientPt);
+    const target = findMenuInteractiveTarget(hitPt.x, hitPt.y);
 
     if (!target || nowMs < menuHandActivateCooldownUntilMs) {
         clearMenuHandDwellHighlight();
@@ -1752,9 +1772,34 @@ btnBackMenu?.addEventListener('click', () => showMainMenu());
 const gameContainer = document.getElementById('game-container');
 const btnFullscreen = document.getElementById('btn-fullscreen');
 const btnFullscreenLabel = btnFullscreen?.querySelector('.btn-fullscreen-label');
+let pseudoFullscreenActive = false;
 
 function getCurrentFullscreenElement() {
     return document.fullscreenElement || document.webkitFullscreenElement || null;
+}
+
+function isEffectiveFullscreen() {
+    return !!getCurrentFullscreenElement() || pseudoFullscreenActive;
+}
+
+function enterPseudoFullscreen() {
+    if (pseudoFullscreenActive) return;
+    pseudoFullscreenActive = true;
+    document.documentElement.classList.add('is-pseudo-fullscreen');
+    gameContainer?.classList.add('is-pseudo-fullscreen');
+    lastResizeW = 0;
+    lastResizeH = 0;
+    resizeCanvas();
+}
+
+function exitPseudoFullscreen() {
+    if (!pseudoFullscreenActive) return;
+    pseudoFullscreenActive = false;
+    document.documentElement.classList.remove('is-pseudo-fullscreen');
+    gameContainer?.classList.remove('is-pseudo-fullscreen');
+    lastResizeW = 0;
+    lastResizeH = 0;
+    resizeCanvas();
 }
 
 async function enterFullscreen() {
@@ -1782,9 +1827,28 @@ async function exitFullscreen() {
     } catch (_) {}
 }
 
+async function toggleFullscreen({ fromHand = false } = {}) {
+    if (isEffectiveFullscreen()) {
+        if (getCurrentFullscreenElement()) await exitFullscreen();
+        exitPseudoFullscreen();
+        syncFullscreenButton();
+        return;
+    }
+
+    if (fromHand) {
+        enterPseudoFullscreen();
+        syncFullscreenButton();
+        return;
+    }
+
+    await enterFullscreen();
+    if (!getCurrentFullscreenElement()) enterPseudoFullscreen();
+    syncFullscreenButton();
+}
+
 function syncFullscreenButton() {
     if (!btnFullscreen) return;
-    const isFs = !!getCurrentFullscreenElement();
+    const isFs = isEffectiveFullscreen();
     btnFullscreen.classList.toggle('is-active', isFs);
     if (btnFullscreenLabel) btnFullscreenLabel.textContent = isFs ? t('exitFullscreen') : t('fullscreen');
 }
@@ -1794,11 +1858,16 @@ if (btnFullscreen) {
     btnFullscreen.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        if (getCurrentFullscreenElement()) void exitFullscreen();
-        else void enterFullscreen();
+        void toggleFullscreen({ fromHand: false });
     });
-    document.addEventListener('fullscreenchange', syncFullscreenButton);
-    document.addEventListener('webkitfullscreenchange', syncFullscreenButton);
+    document.addEventListener('fullscreenchange', () => {
+        if (!getCurrentFullscreenElement() && pseudoFullscreenActive) return;
+        syncFullscreenButton();
+    });
+    document.addEventListener('webkitfullscreenchange', () => {
+        if (!getCurrentFullscreenElement() && pseudoFullscreenActive) return;
+        syncFullscreenButton();
+    });
     syncFullscreenButton();
 }
 
