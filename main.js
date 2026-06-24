@@ -1444,7 +1444,7 @@ function setMenuHandCursor(clientX, clientY, dwellProgress) {
 function activateMenuHandTarget(el) {
     if (!el) return;
     if (el.id === 'btn-fullscreen' || el.closest('#btn-fullscreen')) {
-        void toggleFullscreen({ fromHand: true });
+        void toggleFullscreen();
         return;
     }
     if (el.matches('label.ui-lang-pill')) {
@@ -1701,6 +1701,7 @@ function triggerGameOver() {
 
 function showMainMenu() {
     isPlaying = false;
+    void exitFullscreen();
     stopMenuHandTracking();
     stopGameMusic();
     cancelSpeech();
@@ -1722,6 +1723,9 @@ function showMainMenu() {
 
 function startGame() {
     tryUnlockAudioOnUserGesture();
+    // Запуск на весь экран. requestFullscreen сработает только при реальном
+    // жесте (тап/клик по «Играть»); вызывается синхронно в обработчике клика.
+    void enterFullscreen();
     stopMenuHandTracking();
     refreshTrackTuning();
     if (trackTuning.mobile) {
@@ -1774,37 +1778,13 @@ btnBackMenu?.addEventListener('click', () => showMainMenu());
 const gameContainer = document.getElementById('game-container');
 const btnFullscreen = document.getElementById('btn-fullscreen');
 const btnFullscreenLabel = btnFullscreen?.querySelector('.btn-fullscreen-label');
-let pseudoFullscreenActive = false;
 
 function getCurrentFullscreenElement() {
     return document.fullscreenElement || document.webkitFullscreenElement || null;
 }
 
-function isEffectiveFullscreen() {
-    return !!getCurrentFullscreenElement() || pseudoFullscreenActive;
-}
-
-function enterPseudoFullscreen() {
-    if (pseudoFullscreenActive) return;
-    pseudoFullscreenActive = true;
-    document.documentElement.classList.add('is-pseudo-fullscreen');
-    gameContainer?.classList.add('is-pseudo-fullscreen');
-    lastResizeW = 0;
-    lastResizeH = 0;
-    resizeCanvas();
-}
-
-function exitPseudoFullscreen() {
-    if (!pseudoFullscreenActive) return;
-    pseudoFullscreenActive = false;
-    document.documentElement.classList.remove('is-pseudo-fullscreen');
-    gameContainer?.classList.remove('is-pseudo-fullscreen');
-    lastResizeW = 0;
-    lastResizeH = 0;
-    resizeCanvas();
-}
-
 async function enterFullscreen() {
+    if (getCurrentFullscreenElement()) return;
     const targets = [gameContainer, document.documentElement, document.body].filter(Boolean);
     for (const el of targets) {
         try {
@@ -1823,34 +1803,22 @@ async function enterFullscreen() {
 }
 
 async function exitFullscreen() {
+    if (!getCurrentFullscreenElement()) return;
     try {
         if (document.exitFullscreen) await document.exitFullscreen();
         else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
     } catch (_) {}
 }
 
-async function toggleFullscreen({ fromHand = false } = {}) {
-    if (isEffectiveFullscreen()) {
-        if (getCurrentFullscreenElement()) await exitFullscreen();
-        exitPseudoFullscreen();
-        syncFullscreenButton();
-        return;
-    }
-
-    if (fromHand) {
-        enterPseudoFullscreen();
-        syncFullscreenButton();
-        return;
-    }
-
-    await enterFullscreen();
-    if (!getCurrentFullscreenElement()) enterPseudoFullscreen();
+async function toggleFullscreen() {
+    if (getCurrentFullscreenElement()) await exitFullscreen();
+    else await enterFullscreen();
     syncFullscreenButton();
 }
 
 function syncFullscreenButton() {
     if (!btnFullscreen) return;
-    const isFs = isEffectiveFullscreen();
+    const isFs = !!getCurrentFullscreenElement();
     btnFullscreen.classList.toggle('is-active', isFs);
     if (btnFullscreenLabel) btnFullscreenLabel.textContent = isFs ? t('exitFullscreen') : t('fullscreen');
 }
@@ -1860,16 +1828,10 @@ if (btnFullscreen) {
     btnFullscreen.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        void toggleFullscreen({ fromHand: false });
+        void toggleFullscreen();
     });
-    document.addEventListener('fullscreenchange', () => {
-        if (!getCurrentFullscreenElement() && pseudoFullscreenActive) return;
-        syncFullscreenButton();
-    });
-    document.addEventListener('webkitfullscreenchange', () => {
-        if (!getCurrentFullscreenElement() && pseudoFullscreenActive) return;
-        syncFullscreenButton();
-    });
+    document.addEventListener('fullscreenchange', syncFullscreenButton);
+    document.addEventListener('webkitfullscreenchange', syncFullscreenButton);
     syncFullscreenButton();
 }
 

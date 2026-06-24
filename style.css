@@ -32,23 +32,6 @@ body, html {
   user-select: none;
 }
 
-html.is-pseudo-fullscreen,
-html.is-pseudo-fullscreen body {
-  overflow: hidden;
-  margin: 0;
-  padding: 0;
-}
-
-#game-container.is-pseudo-fullscreen {
-  position: fixed !important;
-  inset: 0 !important;
-  width: 100vw !important;
-  height: 100dvh !important;
-  max-width: none !important;
-  margin: 0 !important;
-  z-index: 2147483646;
-}
-
 video {
   /* Do not use display: none; Safari will suspend playback of the webcam stream! */
   position: absolute;
