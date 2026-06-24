@@ -1277,7 +1277,7 @@ function isMainMenuVisible() {
     return Boolean(mainMenu && !mainMenu.classList.contains('is-hidden'));
 }
 
-const MENU_HAND_DWELL_MS = 2000;
+const MENU_HAND_DWELL_MS = 1000;
 const MENU_HAND_MIN_VISIBILITY = 0.35;
 const MENU_HAND_ACTIVATE_COOLDOWN_MS = 700;
 const MENU_HAND_POSE_SMOOTH_ALPHA = 0.14;
