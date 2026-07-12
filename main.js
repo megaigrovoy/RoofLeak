@@ -3081,7 +3081,53 @@ function shoulderMidScreen(lm, getScreenPoint) {
     return { x: (a.x + b.x) * 0.5, y: (a.y + b.y) * 0.5 };
 }
 
-function bindStablePoseKeys(sortedPersons, getScreenPoint) {
+// Constant-velocity предсказание центра плеч (пункт A ресерча,
+// docs/two-player-occlusion-tracking.md). Матчим детекции к предсказанной
+// позиции трека, а не к последней наблюдавшейся — тогда при пересечении
+// игроков ID следует за траекторией движения, а не за случайной близостью.
+const POSE_VELOCITY_SMOOTH_ALPHA = 0.5; // EMA сглаживание скорости
+const POSE_PREDICT_MAX_MS = 500; // не экстраполируем дальше этого горизонта
+
+/** Экстраполированная позиция центра плеч трека на момент nowMs. */
+function predictedShoulderMid(s, nowMs) {
+    if (s.vx == null || s.t == null) return { x: s.x, y: s.y };
+    let dtMs = nowMs - s.t;
+    if (dtMs < 0) dtMs = 0;
+    if (dtMs > POSE_PREDICT_MAX_MS) dtMs = POSE_PREDICT_MAX_MS;
+    return { x: s.x + s.vx * dtMs, y: s.y + s.vy * dtMs };
+}
+
+/**
+ * Обновить трек наблюдением. На новом кадре камеры пересчитываем скорость
+ * (px/мс) из смещения за реальный dt и сглаживаем EMA; на промежуточных
+ * render-кадрах (120 Гц) позицию/скорость не трогаем, чтобы скорость не
+ * «набегала» лишними тиками.
+ */
+function updateStableTrack(s, mid, nowMs, isNewFrame) {
+    if (isNewFrame && s.t != null) {
+        const dtMs = nowMs - s.t;
+        if (dtMs > 1e-3) {
+            const vxRaw = (mid.x - s.x) / dtMs;
+            const vyRaw = (mid.y - s.y) / dtMs;
+            const a = POSE_VELOCITY_SMOOTH_ALPHA;
+            s.vx = s.vx == null ? vxRaw : s.vx * (1 - a) + vxRaw * a;
+            s.vy = s.vy == null ? vyRaw : s.vy * (1 - a) + vyRaw * a;
+        }
+    }
+    s.x = mid.x;
+    s.y = mid.y;
+    if (isNewFrame) s.t = nowMs;
+    if (s.vx == null) {
+        s.vx = 0;
+        s.vy = 0;
+    }
+}
+
+function makeStableTrack(key, mid, nowMs) {
+    return { key, x: mid.x, y: mid.y, vx: 0, vy: 0, t: nowMs };
+}
+
+function bindStablePoseKeys(sortedPersons, getScreenPoint, isNewFrame = true, nowMs = performance.now()) {
     const items = [];
     for (const { lm } of sortedPersons) {
         const mid = shoulderMidScreen(lm, getScreenPoint);
@@ -3091,34 +3137,33 @@ function bindStablePoseKeys(sortedPersons, getScreenPoint) {
     if (items.length === 0) return [];
 
     if (items.length >= 3) {
-        stablePoseShoulderMid = items.map((it, i) => ({
-            key: `Pose#${i}`,
-            x: it.mid.x,
-            y: it.mid.y
-        }));
+        stablePoseShoulderMid = items.map((it, i) => makeStableTrack(`Pose#${i}`, it.mid, nowMs));
         return items.map((it, i) => ({ lm: it.lm, key: `Pose#${i}` }));
     }
 
     if (items.length === 1) {
         if (stablePoseShoulderMid.length >= 2) {
-            let bestKey = stablePoseShoulderMid[0].key;
+            // Матчим к ПРЕДСКАЗАННОЙ позиции: игрок, ушедший под окклюзию,
+            // мог продолжить движение — его предсказание ближе, чем застывшая точка.
+            let best = stablePoseShoulderMid[0];
             let bestD = Infinity;
             for (const s of stablePoseShoulderMid) {
-                const d = Math.hypot(items[0].mid.x - s.x, items[0].mid.y - s.y);
+                const p = predictedShoulderMid(s, nowMs);
+                const d = Math.hypot(items[0].mid.x - p.x, items[0].mid.y - p.y);
                 if (d < bestD) {
                     bestD = d;
-                    bestKey = s.key;
+                    best = s;
                 }
             }
-            stablePoseShoulderMid = [{ key: bestKey, x: items[0].mid.x, y: items[0].mid.y }];
-            return [{ lm: items[0].lm, key: bestKey }];
+            updateStableTrack(best, items[0].mid, nowMs, isNewFrame);
+            stablePoseShoulderMid = [best];
+            return [{ lm: items[0].lm, key: best.key }];
         }
         if (stablePoseShoulderMid.length === 1) {
-            stablePoseShoulderMid[0].x = items[0].mid.x;
-            stablePoseShoulderMid[0].y = items[0].mid.y;
+            updateStableTrack(stablePoseShoulderMid[0], items[0].mid, nowMs, isNewFrame);
             return [{ lm: items[0].lm, key: stablePoseShoulderMid[0].key }];
         }
-        stablePoseShoulderMid = [{ key: 'Pose#0', x: items[0].mid.x, y: items[0].mid.y }];
+        stablePoseShoulderMid = [makeStableTrack('Pose#0', items[0].mid, nowMs)];
         return [{ lm: items[0].lm, key: 'Pose#0' }];
     }
 
@@ -3127,32 +3172,32 @@ function bindStablePoseKeys(sortedPersons, getScreenPoint) {
 
     if (stablePoseShoulderMid.length === 1) {
         const old = stablePoseShoulderMid[0];
-        const d0 = Math.hypot(t0.mid.x - old.x, t0.mid.y - old.y);
-        const d1 = Math.hypot(t1.mid.x - old.x, t1.mid.y - old.y);
+        const p = predictedShoulderMid(old, nowMs);
+        const d0 = Math.hypot(t0.mid.x - p.x, t0.mid.y - p.y);
+        const d1 = Math.hypot(t1.mid.x - p.x, t1.mid.y - p.y);
+        const oldKey = old.key;
         if (d0 <= d1) {
-            stablePoseShoulderMid = [
-                { key: old.key, x: t0.mid.x, y: t0.mid.y },
-                { key: otherPoseKey(old.key), x: t1.mid.x, y: t1.mid.y }
-            ];
+            updateStableTrack(old, t0.mid, nowMs, isNewFrame);
+            const other = makeStableTrack(otherPoseKey(oldKey), t1.mid, nowMs);
+            stablePoseShoulderMid = [old, other];
             return [
-                { lm: t0.lm, key: old.key },
-                { lm: t1.lm, key: otherPoseKey(old.key) }
+                { lm: t0.lm, key: oldKey },
+                { lm: t1.lm, key: other.key }
             ];
         }
-        stablePoseShoulderMid = [
-            { key: otherPoseKey(old.key), x: t0.mid.x, y: t0.mid.y },
-            { key: old.key, x: t1.mid.x, y: t1.mid.y }
-        ];
+        updateStableTrack(old, t1.mid, nowMs, isNewFrame);
+        const other = makeStableTrack(otherPoseKey(oldKey), t0.mid, nowMs);
+        stablePoseShoulderMid = [other, old];
         return [
-            { lm: t0.lm, key: otherPoseKey(old.key) },
-            { lm: t1.lm, key: old.key }
+            { lm: t0.lm, key: other.key },
+            { lm: t1.lm, key: oldKey }
         ];
     }
 
     if (stablePoseShoulderMid.length !== 2) {
         stablePoseShoulderMid = [
-            { key: 'Pose#0', x: t0.mid.x, y: t0.mid.y },
-            { key: 'Pose#1', x: t1.mid.x, y: t1.mid.y }
+            makeStableTrack('Pose#0', t0.mid, nowMs),
+            makeStableTrack('Pose#1', t1.mid, nowMs)
         ];
         return [
             { lm: t0.lm, key: 'Pose#0' },
@@ -3162,10 +3207,13 @@ function bindStablePoseKeys(sortedPersons, getScreenPoint) {
 
     const s0 = stablePoseShoulderMid[0];
     const s1 = stablePoseShoulderMid[1];
-    const d00 = Math.hypot(t0.mid.x - s0.x, t0.mid.y - s0.y);
-    const d10 = Math.hypot(t1.mid.x - s0.x, t1.mid.y - s0.y);
-    const d01 = Math.hypot(t0.mid.x - s1.x, t0.mid.y - s1.y);
-    const d11 = Math.hypot(t1.mid.x - s1.x, t1.mid.y - s1.y);
+    // Стоимости считаем к предсказанным позициям треков.
+    const p0 = predictedShoulderMid(s0, nowMs);
+    const p1 = predictedShoulderMid(s1, nowMs);
+    const d00 = Math.hypot(t0.mid.x - p0.x, t0.mid.y - p0.y);
+    const d10 = Math.hypot(t1.mid.x - p0.x, t1.mid.y - p0.y);
+    const d01 = Math.hypot(t0.mid.x - p1.x, t0.mid.y - p1.y);
+    const d11 = Math.hypot(t1.mid.x - p1.x, t1.mid.y - p1.y);
     const straight = d00 + d11;
     const crossed = d01 + d10;
     let itemForS0 = 0;
@@ -3176,10 +3224,8 @@ function bindStablePoseKeys(sortedPersons, getScreenPoint) {
     }
     const mS0 = items[itemForS0];
     const mS1 = items[itemForS1];
-    s0.x = mS0.mid.x;
-    s0.y = mS0.mid.y;
-    s1.x = mS1.mid.x;
-    s1.y = mS1.mid.y;
+    updateStableTrack(s0, mS0.mid, nowMs, isNewFrame);
+    updateStableTrack(s1, mS1.mid, nowMs, isNewFrame);
     return [
         { lm: mS0.lm, key: s0.key },
         { lm: mS1.lm, key: s1.key }
@@ -3390,7 +3436,7 @@ function gameLoop(nowTime) {
     const activeBuckets = [];
 
     if (currentPoseResults?.landmarks) {
-        orderedPersons = bindStablePoseKeys(getOrderedPersons(currentPoseResults), getScreenPoint);
+        orderedPersons = bindStablePoseKeys(getOrderedPersons(currentPoseResults), getScreenPoint, poseFrameIsNew, nowTime);
         const activeKeys = new Set(orderedPersons.map((p) => p.key));
 
         // Сглаживание/перерасчёт ведра — только на новом кадре камеры (~30 fps),
