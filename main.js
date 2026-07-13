@@ -3085,33 +3085,51 @@ function shoulderMidScreen(lm, getScreenPoint) {
 // docs/two-player-occlusion-tracking.md). Матчим детекции к предсказанной
 // позиции трека, а не к последней наблюдавшейся — тогда при пересечении
 // игроков ID следует за траекторией движения, а не за случайной близостью.
-const POSE_VELOCITY_SMOOTH_ALPHA = 0.5; // EMA сглаживание скорости
-const POSE_PREDICT_MAX_MS = 500; // не экстраполируем дальше этого горизонта
+const POSE_VELOCITY_SMOOTH_ALPHA = 0.35; // EMA сглаживание скорости
+const POSE_PREDICT_MAX_MS = 50; // короткий горизонт (~1 кадр камеры вперёд)
+const POSE_VELOCITY_MAX_PX_MS = 4; // потолок скорости, чтобы выброс не «уводил» трек
+// Если трек не обновлялся дольше этого — считаем, что игрок пропадал: скорость
+// сбрасываем и экстраполяцию не делаем (иначе предсказание «улетает» и рвёт матч).
+const POSE_VELOCITY_STALE_MS = 200;
+// Скорость считаем только по «нормальному» межкадровому интервалу камеры;
+// большие/крошечные dt (скачок таймстампа, вернувшийся из окклюзии трек) не годятся.
+const POSE_VELOCITY_MIN_DT_MS = 8;
+const POSE_VELOCITY_MAX_DT_MS = 120;
+
+function clampVel(v) {
+    if (v > POSE_VELOCITY_MAX_PX_MS) return POSE_VELOCITY_MAX_PX_MS;
+    if (v < -POSE_VELOCITY_MAX_PX_MS) return -POSE_VELOCITY_MAX_PX_MS;
+    return v;
+}
 
 /** Экстраполированная позиция центра плеч трека на момент nowMs. */
 function predictedShoulderMid(s, nowMs) {
-    if (s.vx == null || s.t == null) return { x: s.x, y: s.y };
+    if (!s.vx || s.t == null) return { x: s.x, y: s.y };
     let dtMs = nowMs - s.t;
-    if (dtMs < 0) dtMs = 0;
+    if (dtMs <= 0) return { x: s.x, y: s.y };
+    // Долго не обновлялся → игрок пропадал: не экстраполируем по устаревшей скорости.
+    if (dtMs > POSE_VELOCITY_STALE_MS) return { x: s.x, y: s.y };
     if (dtMs > POSE_PREDICT_MAX_MS) dtMs = POSE_PREDICT_MAX_MS;
     return { x: s.x + s.vx * dtMs, y: s.y + s.vy * dtMs };
 }
 
 /**
- * Обновить трек наблюдением. На новом кадре камеры пересчитываем скорость
- * (px/мс) из смещения за реальный dt и сглаживаем EMA; на промежуточных
- * render-кадрах (120 Гц) позицию/скорость не трогаем, чтобы скорость не
- * «набегала» лишними тиками.
+ * Обновить трек наблюдением. Скорость (px/мс) пересчитываем только на новом
+ * кадре камеры и только при нормальном межкадровом интервале; после долгой
+ * паузы (трек пропадал) скорость обнуляем, чтобы не экстраполировать в никуда.
  */
 function updateStableTrack(s, mid, nowMs, isNewFrame) {
     if (isNewFrame && s.t != null) {
         const dtMs = nowMs - s.t;
-        if (dtMs > 1e-3) {
-            const vxRaw = (mid.x - s.x) / dtMs;
-            const vyRaw = (mid.y - s.y) / dtMs;
+        if (dtMs > POSE_VELOCITY_STALE_MS) {
+            s.vx = 0;
+            s.vy = 0;
+        } else if (dtMs >= POSE_VELOCITY_MIN_DT_MS && dtMs <= POSE_VELOCITY_MAX_DT_MS) {
+            const vxRaw = clampVel((mid.x - s.x) / dtMs);
+            const vyRaw = clampVel((mid.y - s.y) / dtMs);
             const a = POSE_VELOCITY_SMOOTH_ALPHA;
-            s.vx = s.vx == null ? vxRaw : s.vx * (1 - a) + vxRaw * a;
-            s.vy = s.vy == null ? vyRaw : s.vy * (1 - a) + vyRaw * a;
+            s.vx = clampVel((s.vx ?? 0) * (1 - a) + vxRaw * a);
+            s.vy = clampVel((s.vy ?? 0) * (1 - a) + vyRaw * a);
         }
     }
     s.x = mid.x;
