@@ -1048,6 +1048,7 @@ function resetWristSmoothing() {
     mugModeUntilByPoseKey.clear();
     bucketGraceByPoseKey.clear();
     stablePoseShoulderMid = [];
+    torsoFrameData = null;
 }
 
 function isMugMode(poseKey, nowMs) {
@@ -3068,10 +3069,6 @@ function getOrderedPersons(poseResults) {
         .map((p, i) => ({ lm: p.lm, key: `Pose#${i}` }));
 }
 
-function otherPoseKey(k) {
-    return k === 'Pose#0' ? 'Pose#1' : 'Pose#0';
-}
-
 function shoulderMidScreen(lm, getScreenPoint) {
     const ls = lm[11];
     const rs = lm[12];
@@ -3142,7 +3139,155 @@ function updateStableTrack(s, mid, nowMs, isNewFrame) {
 }
 
 function makeStableTrack(key, mid, nowMs) {
-    return { key, x: mid.x, y: mid.y, vx: 0, vy: 0, t: nowMs };
+    return { key, x: mid.x, y: mid.y, vx: 0, vy: 0, t: nowMs, seen: nowMs, color: null };
+}
+
+// --- Цветовая подпись торса ------------------------------------------------
+// Известный приём: сэмплировать цвет одежды из области торса (плечи+бёдра) и по
+// нему различать игроков — это восстанавливает identity после окклюзии без
+// нейросети. См. docs/two-player-tracking-research.md
+// Сэмплим из крошечного оффскрин-канваса, чтобы не читать пиксели с игрового.
+const TORSO_SAMPLE_W = 64;
+const TORSO_SAMPLE_H = 48;
+const TORSO_COLOR_SMOOTH_ALPHA = 0.15; // подпись меняется медленно (одежда не мигает)
+// Вес цвета в стоимости матча: перевод «расстояния по цвету» (0..441) в пиксели.
+const TORSO_COLOR_COST_MUL = 0.5;
+const TORSO_COLOR_MAX_COST = 140; // потолок вклада цвета, чтобы он не доминировал
+
+let torsoCanvas = null;
+let torsoCtx = null;
+let torsoFrameData = null;
+
+function ensureTorsoSampler() {
+    if (torsoCtx) return true;
+    if (typeof document === 'undefined') return false;
+    torsoCanvas = document.createElement('canvas');
+    torsoCanvas.width = TORSO_SAMPLE_W;
+    torsoCanvas.height = TORSO_SAMPLE_H;
+    torsoCtx = torsoCanvas.getContext('2d', { willReadFrequently: true });
+    return !!torsoCtx;
+}
+
+/** Раз на новый кадр камеры снимаем уменьшенную копию видео для сэмплинга цвета. */
+function refreshTorsoFrame() {
+    if (!ensureTorsoSampler()) return;
+    if (!video?.videoWidth || !video.videoHeight) return;
+    try {
+        torsoCtx.drawImage(video, 0, 0, TORSO_SAMPLE_W, TORSO_SAMPLE_H);
+        torsoFrameData = torsoCtx.getImageData(0, 0, TORSO_SAMPLE_W, TORSO_SAMPLE_H);
+    } catch {
+        torsoFrameData = null; // например, tainted canvas — просто работаем без цвета
+    }
+}
+
+/**
+ * Средний цвет торса позы: прямоугольник между плечами (11/12) и бёдрами (23/24)
+ * в нормализованных координатах лендмарков. Возвращает {r,g,b} или null.
+ */
+function sampleTorsoColor(lm, isNewFrame) {
+    if (!isNewFrame || !torsoFrameData) return null;
+    const ls = lm[11];
+    const rs = lm[12];
+    const lh = lm[23];
+    const rh = lm[24];
+    if (!ls || !rs || !lh || !rh) return null;
+
+    const xs = [ls.x, rs.x, lh.x, rh.x];
+    const ys = [ls.y, rs.y, lh.y, rh.y];
+    // Сужаем ROI к центру торса — подальше от фона и рук.
+    const cx = (xs[0] + xs[1] + xs[2] + xs[3]) / 4;
+    const cy = (ys[0] + ys[1] + ys[2] + ys[3]) / 4;
+    const halfW = (Math.max(...xs) - Math.min(...xs)) * 0.25;
+    const halfH = (Math.max(...ys) - Math.min(...ys)) * 0.3;
+    if (halfW <= 0 || halfH <= 0) return null;
+
+    const x0 = Math.max(0, Math.round((cx - halfW) * TORSO_SAMPLE_W));
+    const x1 = Math.min(TORSO_SAMPLE_W - 1, Math.round((cx + halfW) * TORSO_SAMPLE_W));
+    const y0 = Math.max(0, Math.round((cy - halfH) * TORSO_SAMPLE_H));
+    const y1 = Math.min(TORSO_SAMPLE_H - 1, Math.round((cy + halfH) * TORSO_SAMPLE_H));
+    if (x1 < x0 || y1 < y0) return null;
+
+    const data = torsoFrameData.data;
+    let r = 0;
+    let g = 0;
+    let b = 0;
+    let n = 0;
+    for (let y = y0; y <= y1; y++) {
+        for (let x = x0; x <= x1; x++) {
+            const i = (y * TORSO_SAMPLE_W + x) * 4;
+            r += data[i];
+            g += data[i + 1];
+            b += data[i + 2];
+            n++;
+        }
+    }
+    if (!n) return null;
+    return { r: r / n, g: g / n, b: b / n };
+}
+
+/** Медленно подмешиваем наблюдённый цвет в подпись трека. */
+function updateTrackColor(track, color) {
+    if (!color) return;
+    if (!track.color) {
+        track.color = { ...color };
+        return;
+    }
+    const a = TORSO_COLOR_SMOOTH_ALPHA;
+    track.color.r = track.color.r * (1 - a) + color.r * a;
+    track.color.g = track.color.g * (1 - a) + color.g * a;
+    track.color.b = track.color.b * (1 - a) + color.b * a;
+}
+
+/** Вклад цветовой подписи в стоимость матча (0, если цвета неизвестны). */
+function torsoColorCost(track, item) {
+    if (!track.color || !item.color) return 0;
+    const d = Math.hypot(
+        track.color.r - item.color.r,
+        track.color.g - item.color.g,
+        track.color.b - item.color.b
+    );
+    return Math.min(TORSO_COLOR_MAX_COST, d * TORSO_COLOR_COST_MUL);
+}
+
+// --- Track lifecycle -------------------------------------------------------
+// Раньше при потере одной из двух поз трек второго игрока просто ВЫБРАСЫВАЛСЯ,
+// из-за чего второй игрок «постоянно пропадал» и мог получить чужой ключ при
+// возвращении. Теперь трек не удаляется: он остаётся «lost» и живёт TRACK_MAX_AGE_MS,
+// предсказываясь по скорости, — как maxAge у трекеров TF.js/SORT.
+// См. docs/two-player-tracking-research.md
+const TRACK_MAX_AGE_MS = 2000;
+// Порог стоимости, выше которого детекция НЕ считается тем же игроком, а
+// заводит новый трек (аналог minSimilarity). В долях от минимальной стороны кадра.
+const TRACK_MAX_MATCH_DIST_MUL = 0.55;
+// Гистерезис в пользу текущего назначения — не даём ID «прыгать» при почти равных
+// стоимостях (когда игроки сблизились и центроиды почти совпали).
+const TRACK_SWAP_HYSTERESIS = 12;
+
+function trackMaxMatchDist() {
+    return Math.max(120, gameLayout.minSide * TRACK_MAX_MATCH_DIST_MUL);
+}
+
+/** Стоимость назначения детекции треку: расстояние до предсказания + цветовая подпись. */
+function trackMatchCost(track, item, nowMs) {
+    const p = predictedShoulderMid(track, nowMs);
+    const dist = Math.hypot(item.mid.x - p.x, item.mid.y - p.y);
+    return dist + torsoColorCost(track, item);
+}
+
+function dropExpiredTracks(nowMs) {
+    stablePoseShoulderMid = stablePoseShoulderMid.filter(
+        (s) => nowMs - s.seen <= TRACK_MAX_AGE_MS
+    );
+}
+
+/** Свободный ключ Pose#N, не занятый живыми треками. */
+function freePoseKey() {
+    const used = new Set(stablePoseShoulderMid.map((s) => s.key));
+    for (let i = 0; i < 2; i++) {
+        const k = `Pose#${i}`;
+        if (!used.has(k)) return k;
+    }
+    return `Pose#${stablePoseShoulderMid.length}`;
 }
 
 function bindStablePoseKeys(sortedPersons, getScreenPoint, isNewFrame = true, nowMs = performance.now()) {
@@ -3150,104 +3295,78 @@ function bindStablePoseKeys(sortedPersons, getScreenPoint, isNewFrame = true, no
     for (const { lm } of sortedPersons) {
         const mid = shoulderMidScreen(lm, getScreenPoint);
         if (!mid) continue;
-        items.push({ lm, mid });
+        items.push({ lm, mid, color: sampleTorsoColor(lm, isNewFrame) });
     }
+
+    dropExpiredTracks(nowMs);
     if (items.length === 0) return [];
 
+    // Больше 2 человек в кадре — режим не поддерживается, просто раздаём ключи по порядку.
     if (items.length >= 3) {
         stablePoseShoulderMid = items.map((it, i) => makeStableTrack(`Pose#${i}`, it.mid, nowMs));
         return items.map((it, i) => ({ lm: it.lm, key: `Pose#${i}` }));
     }
 
-    if (items.length === 1) {
-        if (stablePoseShoulderMid.length >= 2) {
-            // Матчим к ПРЕДСКАЗАННОЙ позиции: игрок, ушедший под окклюзию,
-            // мог продолжить движение — его предсказание ближе, чем застывшая точка.
-            let best = stablePoseShoulderMid[0];
-            let bestD = Infinity;
+    const maxDist = trackMaxMatchDist();
+    const assigned = new Map(); // track -> item
+
+    if (stablePoseShoulderMid.length >= 2 && items.length === 2) {
+        // 2×2: сравниваем прямое и перекрёстное назначение по полной стоимости.
+        const s0 = stablePoseShoulderMid[0];
+        const s1 = stablePoseShoulderMid[1];
+        const c00 = trackMatchCost(s0, items[0], nowMs);
+        const c01 = trackMatchCost(s0, items[1], nowMs);
+        const c10 = trackMatchCost(s1, items[0], nowMs);
+        const c11 = trackMatchCost(s1, items[1], nowMs);
+        const straight = c00 + c11;
+        const crossed = c01 + c10;
+        if (crossed + TRACK_SWAP_HYSTERESIS < straight) {
+            assigned.set(s0, items[1]);
+            assigned.set(s1, items[0]);
+        } else {
+            assigned.set(s0, items[0]);
+            assigned.set(s1, items[1]);
+        }
+    } else {
+        // Жадное сопоставление: каждую детекцию отдаём лучшему свободному треку,
+        // если стоимость в пределах порога. Треки без детекции остаются «lost».
+        const freeItems = new Set(items);
+        for (const item of items) {
+            let best = null;
+            let bestCost = Infinity;
             for (const s of stablePoseShoulderMid) {
-                const p = predictedShoulderMid(s, nowMs);
-                const d = Math.hypot(items[0].mid.x - p.x, items[0].mid.y - p.y);
-                if (d < bestD) {
-                    bestD = d;
+                if (assigned.has(s)) continue;
+                const cost = trackMatchCost(s, item, nowMs);
+                if (cost < bestCost) {
+                    bestCost = cost;
                     best = s;
                 }
             }
-            updateStableTrack(best, items[0].mid, nowMs, isNewFrame);
-            stablePoseShoulderMid = [best];
-            return [{ lm: items[0].lm, key: best.key }];
+            if (best && bestCost <= maxDist) {
+                assigned.set(best, item);
+                freeItems.delete(item);
+            }
         }
-        if (stablePoseShoulderMid.length === 1) {
-            updateStableTrack(stablePoseShoulderMid[0], items[0].mid, nowMs, isNewFrame);
-            return [{ lm: items[0].lm, key: stablePoseShoulderMid[0].key }];
+        // Детекции, которым не нашлось трека, заводят новый.
+        for (const item of freeItems) {
+            const track = makeStableTrack(freePoseKey(), item.mid, nowMs);
+            stablePoseShoulderMid.push(track);
+            assigned.set(track, item);
         }
-        stablePoseShoulderMid = [makeStableTrack('Pose#0', items[0].mid, nowMs)];
-        return [{ lm: items[0].lm, key: 'Pose#0' }];
     }
 
-    const t0 = items[0];
-    const t1 = items[1];
-
-    if (stablePoseShoulderMid.length === 1) {
-        const old = stablePoseShoulderMid[0];
-        const p = predictedShoulderMid(old, nowMs);
-        const d0 = Math.hypot(t0.mid.x - p.x, t0.mid.y - p.y);
-        const d1 = Math.hypot(t1.mid.x - p.x, t1.mid.y - p.y);
-        const oldKey = old.key;
-        if (d0 <= d1) {
-            updateStableTrack(old, t0.mid, nowMs, isNewFrame);
-            const other = makeStableTrack(otherPoseKey(oldKey), t1.mid, nowMs);
-            stablePoseShoulderMid = [old, other];
-            return [
-                { lm: t0.lm, key: oldKey },
-                { lm: t1.lm, key: other.key }
-            ];
+    const out = [];
+    for (const s of stablePoseShoulderMid) {
+        const item = assigned.get(s);
+        if (!item) continue; // трек остаётся lost — живёт до TRACK_MAX_AGE_MS
+        updateStableTrack(s, item.mid, nowMs, isNewFrame);
+        if (isNewFrame) {
+            s.seen = nowMs;
+            updateTrackColor(s, item.color);
         }
-        updateStableTrack(old, t1.mid, nowMs, isNewFrame);
-        const other = makeStableTrack(otherPoseKey(oldKey), t0.mid, nowMs);
-        stablePoseShoulderMid = [other, old];
-        return [
-            { lm: t0.lm, key: other.key },
-            { lm: t1.lm, key: oldKey }
-        ];
+        out.push({ lm: item.lm, key: s.key });
     }
-
-    if (stablePoseShoulderMid.length !== 2) {
-        stablePoseShoulderMid = [
-            makeStableTrack('Pose#0', t0.mid, nowMs),
-            makeStableTrack('Pose#1', t1.mid, nowMs)
-        ];
-        return [
-            { lm: t0.lm, key: 'Pose#0' },
-            { lm: t1.lm, key: 'Pose#1' }
-        ];
-    }
-
-    const s0 = stablePoseShoulderMid[0];
-    const s1 = stablePoseShoulderMid[1];
-    // Стоимости считаем к предсказанным позициям треков.
-    const p0 = predictedShoulderMid(s0, nowMs);
-    const p1 = predictedShoulderMid(s1, nowMs);
-    const d00 = Math.hypot(t0.mid.x - p0.x, t0.mid.y - p0.y);
-    const d10 = Math.hypot(t1.mid.x - p0.x, t1.mid.y - p0.y);
-    const d01 = Math.hypot(t0.mid.x - p1.x, t0.mid.y - p1.y);
-    const d11 = Math.hypot(t1.mid.x - p1.x, t1.mid.y - p1.y);
-    const straight = d00 + d11;
-    const crossed = d01 + d10;
-    let itemForS0 = 0;
-    let itemForS1 = 1;
-    if (crossed + 12 < straight) {
-        itemForS0 = 1;
-        itemForS1 = 0;
-    }
-    const mS0 = items[itemForS0];
-    const mS1 = items[itemForS1];
-    updateStableTrack(s0, mS0.mid, nowMs, isNewFrame);
-    updateStableTrack(s1, mS1.mid, nowMs, isNewFrame);
-    return [
-        { lm: mS0.lm, key: s0.key },
-        { lm: mS1.lm, key: s1.key }
-    ];
+    return out;
 }
 
 function playerIndexFromPoseKey(poseKey) {
@@ -3414,6 +3533,8 @@ function gameLoop(nowTime) {
             if (pRes) {
                 currentPoseResults = pRes;
                 poseFrameIsNew = true;
+                // Уменьшенная копия кадра для цветовой подписи торса (см. sampleTorsoColor).
+                if (playerModeCount > 1) refreshTorsoFrame();
             }
         } catch (err) {
             console.warn('PoseLandmarker detectForVideo:', err);
