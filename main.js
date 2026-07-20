@@ -1017,7 +1017,7 @@ function buildTrackTuning() {
         minTrackingConfidence: mobile ? 0.3 : 0.5,
         minPosePresenceConfidence: mobile ? 0.3 : 0.5,
         resizeDebounceMs: mobile ? 220 : 110,
-        bucketGraceMs: mobile ? 600 : 0
+        bucketGraceMs: mobile ? 600 : 250
     };
 }
 
@@ -3394,18 +3394,14 @@ function updateHandsFromPose(landmarks, getScreenPoint, poseKey) {
     const rw = landmarks[16];
     const ls = landmarks[11];
     const rs = landmarks[12];
-    if (!lw || !rw || !ls || !rs) {
+    // Плечи обязательны: от них считаются ширина ведра и якорь для «потерянной» руки.
+    if (!ls || !rs) {
         return holdBucketDuringGrace(poseKey, nowMs);
     }
-    const vis = Math.min(lw.visibility ?? 1, rw.visibility ?? 1, ls.visibility ?? 1, rs.visibility ?? 1);
-    if (vis < trackTuning.wristMinVisibility) {
+    const shoulderVis = Math.min(ls.visibility ?? 1, rs.visibility ?? 1);
+    if (shoulderVis < trackTuning.wristMinVisibility) {
         return holdBucketDuringGrace(poseKey, nowMs);
     }
-
-    const leftRaw = getScreenPoint(lw);
-    const rightRaw = getScreenPoint(rw);
-    leftRaw.visibility = lw.visibility;
-    rightRaw.visibility = rw.visibility;
 
     const p11 = getScreenPoint(ls);
     const p12 = getScreenPoint(rs);
@@ -3413,10 +3409,34 @@ function updateHandsFromPose(landmarks, getScreenPoint, poseKey) {
     if (shoulderWRaw < GAME_CFG.shoulderMinPx) {
         return holdBucketDuringGrace(poseKey, nowMs);
     }
-    const shoulderW = smoothShoulderWidth(poseKey, shoulderWRaw);
+    const shoulderMid = { x: (p11.x + p12.x) * 0.5, y: (p11.y + p12.y) * 0.5 };
 
     let state = wristSmoothByPoseKey.get(poseKey);
-    if (!state) state = { left: null, right: null };
+    if (!state) state = { left: null, right: null, leftOffset: null, rightOffset: null };
+
+    // Руки проверяются ПО ОТДЕЛЬНОСТИ: рука у края кадра (низкая visibility) больше
+    // не убивает ведро целиком. Потерянная рука достраивается по последнему смещению
+    // от центра плеч — «призрак» следует за телом, ведро остаётся в руках.
+    const resolveWrist = (wristLm, offsetKey) => {
+        if (wristLm && (wristLm.visibility ?? 1) >= trackTuning.wristMinVisibility) {
+            const raw = getScreenPoint(wristLm);
+            raw.visibility = wristLm.visibility;
+            state[offsetKey] = { dx: raw.x - shoulderMid.x, dy: raw.y - shoulderMid.y };
+            return raw;
+        }
+        const off = state[offsetKey];
+        if (!off) return null;
+        return { x: shoulderMid.x + off.dx, y: shoulderMid.y + off.dy, visibility: 0 };
+    };
+
+    const leftRaw = resolveWrist(lw, 'leftOffset');
+    const rightRaw = resolveWrist(rw, 'rightOffset');
+    // Обе руки неизвестны (и никогда не были видны) — только тогда ведро уходит в grace.
+    if (!leftRaw || !rightRaw) {
+        return holdBucketDuringGrace(poseKey, nowMs);
+    }
+
+    const shoulderW = smoothShoulderWidth(poseKey, shoulderWRaw);
 
     state.left = smoothWristPoint(state.left, leftRaw);
     state.right = smoothWristPoint(state.right, rightRaw);
