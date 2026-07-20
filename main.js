@@ -991,6 +991,11 @@ const WRIST_SMOOTH_ALPHA = 0.24;
 const WRIST_TELEPORT_PX = 38;
 const SHOULDER_SMOOTH_ALPHA = 0.12;
 const BUCKET_DISPLAY_SMOOTH_ALPHA = 0.2;
+// Кулаки отзывчивее ведра: у них уже есть EMA запястий, второй слой с малой альфой
+// давал бы каскадный лаг — при взмахе кулаки отставали бы от реальных рук по высоте.
+const WRIST_DISPLAY_SMOOTH_ALPHA = 0.45;
+// Ниже этой видимости лендмарк руки считается потерянным даже внутри кадра.
+const WRIST_GHOST_VISIBILITY = 0.15;
 
 function isMobileLikeDevice() {
     if (typeof window === 'undefined') return false;
@@ -1105,14 +1110,22 @@ function angularDistance(a, b) {
 
 function smoothBucketDisplay(poseKey, raw) {
     const a = trackTuning.bucketDisplaySmoothAlpha;
+    // Кулаки: пара сортируется по экранному X и сглаживается как «левый на экране» /
+    // «правый на экране». Метки left/right у MediaPipe тут не важны (спрайт всё равно
+    // выбирается по стороне экрана), а сортировка не флипается, когда руки рядом:
+    // в момент пересечения точки соседние и передача бесшовная. Матчинг «по близости»
+    // здесь не годится — руки, держащие ведро, всегда близко, и назначение дребезжало.
+    const rawA = raw.leftWrist.x >= raw.rightWrist.x ? raw.leftWrist : raw.rightWrist;
+    const rawB = raw.leftWrist.x >= raw.rightWrist.x ? raw.rightWrist : raw.leftWrist;
+
     let st = bucketDisplayByPoseKey.get(poseKey);
     if (!st) {
         st = {
             cx: raw.cx,
             topY: raw.topY,
             angle: raw.angle,
-            lw: { x: raw.leftWrist.x, y: raw.leftWrist.y },
-            rw: { x: raw.rightWrist.x, y: raw.rightWrist.y }
+            wA: { x: rawA.x, y: rawA.y },
+            wB: { x: rawB.x, y: rawB.y }
         };
         bucketDisplayByPoseKey.set(poseKey, st);
         return raw;
@@ -1121,23 +1134,13 @@ function smoothBucketDisplay(poseKey, raw) {
     st.cx = st.cx * (1 - a) + raw.cx * a;
     st.topY = st.topY * (1 - a) + raw.topY * a;
 
-    // Кулаки сглаживаем тем же экранным EMA, что и ведро, — иначе они шагают с
-    // частотой камеры (~30 fps) и на фоне плавного ведра выглядят рывками.
-    // Метки left/right у MediaPipe иногда меняются местами — матчим сырую пару
-    // к предыдущей сглаженной по близости, чтобы кулаки не «переезжали» крест-накрест.
-    let rawL = raw.leftWrist;
-    let rawR = raw.rightWrist;
-    const straightD =
-        Math.hypot(rawL.x - st.lw.x, rawL.y - st.lw.y) +
-        Math.hypot(rawR.x - st.rw.x, rawR.y - st.rw.y);
-    const crossedD =
-        Math.hypot(rawL.x - st.rw.x, rawL.y - st.rw.y) +
-        Math.hypot(rawR.x - st.lw.x, rawR.y - st.lw.y);
-    if (crossedD < straightD) [rawL, rawR] = [rawR, rawL];
-    st.lw.x = st.lw.x * (1 - a) + rawL.x * a;
-    st.lw.y = st.lw.y * (1 - a) + rawL.y * a;
-    st.rw.x = st.rw.x * (1 - a) + rawR.x * a;
-    st.rw.y = st.rw.y * (1 - a) + rawR.y * a;
+    // У кулаков своя, более быстрая альфа: EMA запястий уже есть выше по цепочке,
+    // второй медленный слой давал каскадный лаг (кулаки отставали от рук по высоте).
+    const wa = WRIST_DISPLAY_SMOOTH_ALPHA;
+    st.wA.x = st.wA.x * (1 - wa) + rawA.x * wa;
+    st.wA.y = st.wA.y * (1 - wa) + rawA.y * wa;
+    st.wB.x = st.wB.x * (1 - wa) + rawB.x * wa;
+    st.wB.y = st.wB.y * (1 - wa) + rawB.y * wa;
 
     // MediaPipe временами меняет местами левую/правую стороны тела (особенно на Android):
     // запястья обмениваются значениями, и угол прыгает на 180°. Вектор между запястьями
@@ -1158,8 +1161,8 @@ function smoothBucketDisplay(poseKey, raw) {
         angle: st.angle,
         bottomY: st.topY + raw.height,
         catchBottomY,
-        leftWrist: { x: st.lw.x, y: st.lw.y, visibility: rawL.visibility },
-        rightWrist: { x: st.rw.x, y: st.rw.y, visibility: rawR.visibility }
+        leftWrist: { x: st.wA.x, y: st.wA.y, visibility: rawA.visibility },
+        rightWrist: { x: st.wB.x, y: st.wB.y, visibility: rawB.visibility }
     };
 }
 
@@ -3440,15 +3443,23 @@ function updateHandsFromPose(landmarks, getScreenPoint, poseKey) {
     let state = wristSmoothByPoseKey.get(poseKey);
     if (!state) state = { left: null, right: null, leftOffset: null, rightOffset: null };
 
-    // Руки проверяются ПО ОТДЕЛЬНОСТИ: рука у края кадра (низкая visibility) больше
-    // не убивает ведро целиком. Потерянная рука достраивается по последнему смещению
-    // от центра плеч — «призрак» следует за телом, ведро остаётся в руках.
+    // Руки проверяются ПО ОТДЕЛЬНОСТИ: рука у края кадра больше не убивает ведро
+    // целиком. Потерянная рука достраивается по последнему смещению от центра плеч —
+    // «призрак» следует за телом, ведро остаётся в руках.
+    // ВАЖНО: «призрак» включается только когда лендмарк реально ушёл за кадр или
+    // видимость почти нулевая. Просевшая при быстром движении visibility (0.2–0.45)
+    // у руки в кадре — не повод замораживать кулак: реальная координата точнее призрака.
     const resolveWrist = (wristLm, offsetKey) => {
-        if (wristLm && (wristLm.visibility ?? 1) >= trackTuning.wristMinVisibility) {
-            const raw = getScreenPoint(wristLm);
-            raw.visibility = wristLm.visibility;
-            state[offsetKey] = { dx: raw.x - shoulderMid.x, dy: raw.y - shoulderMid.y };
-            return raw;
+        if (wristLm) {
+            const vis = wristLm.visibility ?? 1;
+            const inFrame =
+                wristLm.x > -0.05 && wristLm.x < 1.05 && wristLm.y > -0.05 && wristLm.y < 1.05;
+            if (vis >= trackTuning.wristMinVisibility || (inFrame && vis >= WRIST_GHOST_VISIBILITY)) {
+                const raw = getScreenPoint(wristLm);
+                raw.visibility = vis;
+                state[offsetKey] = { dx: raw.x - shoulderMid.x, dy: raw.y - shoulderMid.y };
+                return raw;
+            }
         }
         const off = state[offsetKey];
         if (!off) return null;
