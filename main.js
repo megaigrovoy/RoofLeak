@@ -1269,8 +1269,12 @@ function updateMugTimerHud(activeBuckets, nowMs) {
             const frac = left / GAME_CFG.mugModeDurationMs;
             if (ui.fill) ui.fill.style.width = `${Math.max(0, frac * 100)}%`;
             if (ui.name) {
-                ui.name.textContent =
+                const nameText =
                     playerModeCount === 1 ? t('mugSolo') : t('mugPlayer', { n: pi + 1 });
+                if (ui.lastNameText !== nameText) {
+                    ui.lastNameText = nameText;
+                    ui.name.textContent = nameText;
+                }
             }
         } else if (ui.row) {
             ui.row.classList.add('is-hidden');
@@ -3085,13 +3089,16 @@ function drawDrop(ctx, drop) {
 function getOrderedPersons(poseResults) {
     const persons = poseResults?.landmarks;
     if (!persons?.length) return [];
+    // Сортировка по среднему X плеч (11/12): плечи обязательны дальше по контуру
+    // (поза без них отбрасывается в bindStablePoseKeys) и заметно стабильнее
+    // запястий, которые могут уходить за кадр или шуметь.
     return persons
         .map((lm, idx) => {
-            const lw = lm[15];
-            const rw = lm[16];
+            const ls = lm[11];
+            const rs = lm[12];
             const xs = [];
-            if (lw) xs.push(lw.x);
-            if (rw) xs.push(rw.x);
+            if (ls) xs.push(ls.x);
+            if (rs) xs.push(rs.x);
             return { lm, idx, sortX: xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : idx };
         })
         .sort((a, b) => a.sortX - b.sortX)
@@ -3130,7 +3137,10 @@ function clampVel(v) {
 
 /** Экстраполированная позиция центра плеч трека на момент nowMs. */
 function predictedShoulderMid(s, nowMs) {
-    if (!s.vx || s.t == null) return { x: s.x, y: s.y };
+    // vx/vy — честные числа, включая нули (строго вертикальное движение даёт
+    // vx = 0): «нет предсказания» определяем по отсутствию инициализации,
+    // а не по falsy скорости — иначе теряется экстраполяция по вертикали.
+    if (s.t == null || (s.vx == null && s.vy == null)) return { x: s.x, y: s.y };
     let dtMs = nowMs - s.t;
     if (dtMs <= 0) return { x: s.x, y: s.y };
     // Долго не обновлялся → игрок пропадал: не экстраполируем по устаревшей скорости.
@@ -3349,14 +3359,28 @@ function bindStablePoseKeys(sortedPersons, getScreenPoint, isNewFrame = true, no
         const c11 = trackMatchCost(s1, items[1], nowMs);
         const straight = c00 + c11;
         const crossed = c01 + c10;
-        if (crossed + TRACK_SWAP_HYSTERESIS < straight) {
-            assigned.set(s0, items[1]);
-            assigned.set(s1, items[0]);
-        } else {
-            assigned.set(s0, items[0]);
-            assigned.set(s1, items[1]);
+        const useCrossed = crossed + TRACK_SWAP_HYSTERESIS < straight;
+        // Назначаем только пары в пределах порога — как в жадной ветке. Иначе
+        // галлюцинированная вторая поза (отражение, прохожий на фоне) принудительно
+        // забирала живой трек и телепортировала его через весь кадр.
+        const costA = useCrossed ? c01 : c00;
+        const costB = useCrossed ? c10 : c11;
+        if (costA <= maxDist && costB <= maxDist) {
+            if (useCrossed) {
+                assigned.set(s0, items[1]);
+                assigned.set(s1, items[0]);
+            } else {
+                assigned.set(s0, items[0]);
+                assigned.set(s1, items[1]);
+            }
         }
-    } else {
+        // Порог не прошёл — падаем в жадную ветку: кто совпадёт по порогу,
+        // тот совпадёт; лишняя детекция заведёт новый трек или отвалится.
+    }
+    // 2×2: если оба трека и обе детекции удалось сопоставить в пределах порога —
+    // жадная ветка не нужна; иначе часть работы достаётся ей.
+    const pairwiseAssigned = assigned.size === 2;
+    if (!pairwiseAssigned) {
         // Жадное сопоставление: каждую детекцию отдаём лучшему свободному треку,
         // если стоимость в пределах порога. Треки без детекции остаются «lost».
         const freeItems = new Set(items);
@@ -3490,22 +3514,27 @@ function updateHandsFromPose(landmarks, getScreenPoint, poseKey) {
     return bucket;
 }
 
+let lastTrackingDisplayText = null;
+
 function updateTrackingDisplay(orderedPersons, activeBuckets) {
     if (!trackingDisplay) return;
     const n = orderedPersons.length;
     const buckets = activeBuckets.length;
 
+    let text;
     if (playerModeCount === 1) {
-        trackingDisplay.textContent = buckets >= 1 ? t('trackingActive') : t('trackingNeedHands');
-        return;
-    }
-
-    if (n >= 2 && buckets >= 2) {
-        trackingDisplay.textContent = t('tracking2Active');
+        text = buckets >= 1 ? t('trackingActive') : t('trackingNeedHands');
+    } else if (n >= 2 && buckets >= 2) {
+        text = t('tracking2Active');
     } else if (n >= 1 && buckets >= 1) {
-        trackingDisplay.textContent = t('tracking2NeedSecond');
+        text = t('tracking2NeedSecond');
     } else {
-        trackingDisplay.textContent = t('tracking2NeedBoth');
+        text = t('tracking2NeedBoth');
+    }
+    // Функция зовётся каждый rAF-кадр — DOM пишем только при смене текста.
+    if (text !== lastTrackingDisplayText) {
+        lastTrackingDisplayText = text;
+        trackingDisplay.textContent = text;
     }
 }
 
