@@ -19,6 +19,7 @@ const I18N = {
         langLabel: 'Язык',
         langRu: 'RU',
         langEn: 'EN',
+        langEl: 'EL',
         play: 'Играть',
         galleryLink: 'Галерея игр',
         galleryLinkAria: 'Перейти в галерею игр BlagoGames',
@@ -54,6 +55,7 @@ const I18N = {
         popupMug: 'Ой, кружка…',
         praise5: 'Хорошо!',
         praise10: 'Супер!',
+        praise15: 'Ты в ударе!',
         praise20: 'Класс!',
         praiseBig: 'Невероятно!',
         streakLabel: 'Серия: {n}',
@@ -81,6 +83,7 @@ const I18N = {
         langLabel: 'Language',
         langRu: 'RU',
         langEn: 'EN',
+        langEl: 'EL',
         play: 'Play',
         galleryLink: 'Games gallery',
         galleryLinkAria: 'Go to BlagoGames games gallery',
@@ -116,6 +119,7 @@ const I18N = {
         popupMug: 'Oops, a mug…',
         praise5: 'Nice!',
         praise10: 'Super!',
+        praise15: "You're on fire!",
         praise20: 'Awesome!',
         praiseBig: 'Incredible!',
         streakLabel: 'Streak: {n}',
@@ -132,14 +136,82 @@ const I18N = {
         startErrorNoCamera: 'No camera found. Check that it is connected and not used by another app.',
         startErrorTimeout:
             'The camera did not start in time. Close other apps using the camera and refresh the page.'
+    },
+    el: {
+        pageTitle: 'Διαρροή στη στέγη',
+        heroAlt: 'Roof Leak — The Drop Chase',
+        playersLabel: 'Παίκτες',
+        playersOne: '1',
+        playersTwo: '2',
+        langLabel: 'Γλώσσα',
+        langRu: 'RU',
+        langEn: 'EN',
+        langEl: 'EL',
+        play: 'Παίξε',
+        galleryLink: 'Συλλογή παιχνιδιών',
+        galleryLinkAria: 'Μετάβαση στη συλλογή παιχνιδιών BlagoGames',
+        optionsAria: 'Επιλογές',
+        soundSection: 'Ήχος και μουσική',
+        volume: 'Ένταση',
+        gameSounds: 'Ήχοι παιχνιδιού',
+        gameSoundsAria: 'Απενεργοποίηση ήχων παιχνιδιού',
+        music: 'Μουσική',
+        musicDesc: 'Μενού και παιχνίδι',
+        musicAria: 'Απενεργοποίηση μουσικής',
+        fullscreen: 'Πλήρης οθόνη',
+        exitFullscreen: 'Έξοδος από πλήρη οθόνη',
+        menu: 'Μενού',
+        score: 'Πιάστηκαν: {n}',
+        waterMeterAria: 'Στάθμη νερού στο πάτωμα',
+        trackingNeedHands: 'Δείξε και τα δύο χέρια στην κάμερα',
+        trackingActive: 'Τα χέρια εντοπίστηκαν · κράτα τον κουβά',
+        tracking2Active: '2 παίκτες · κοινό σκορ και νερό',
+        tracking2NeedSecond: '2 παίκτες · φώναξε τον δεύτερο παίκτη',
+        tracking2NeedBoth: '2 παίκτες · μπείτε και οι δύο στο κάδρο',
+        mugSolo: 'Κούπα',
+        mugPlayer: 'Παίκτης {n} · κούπα',
+        gameOver: 'GAME OVER · πιάστηκαν {n}',
+        loadingModels: 'Φόρτωση μοντέλων…',
+        howToSpread: 'Άνοιξε τα χέρια σου —',
+        howToBucket: 'θα εμφανιστεί κουβάς!',
+        howToCatch: 'Πιάσε τις σταγόνες από το ταβάνι',
+        popupSlowmo: 'Αργή κίνηση!',
+        popupMagnet: 'Μαγνήτης!',
+        popupBig: 'Μεγάλος κουβάς!',
+        popupDrain: 'Το νερό φεύγει!',
+        popupMug: 'Ωχ, μια κούπα…',
+        praise5: 'Ωραία!',
+        praise10: 'Σούπερ!',
+        praise15: 'Είσαι φωτιά!',
+        praise20: 'Φοβερό!',
+        praiseBig: 'Απίστευτο!',
+        streakLabel: 'Σερί: {n}',
+        waterWarning: 'Προσοχή, το νερό ανεβαίνει!',
+        resultTitle: 'Μπράβο!',
+        resultCaught: 'Σταγόνες που πιάστηκαν: {n}',
+        resultBest: 'Ρεκόρ: {n}',
+        resultNewBest: 'Νέο ρεκόρ!',
+        playAgain: 'Ξανά!',
+        startErrorTitle: 'Δεν ήταν δυνατή η εκκίνηση του παιχνιδιού.',
+        startErrorHintDefault:
+            'Άνοιξε την κονσόλα του browser (F12 → Console) και στείλε μας το σφάλμα αν χρειαστεί.',
+        startErrorCameraBlocked:
+            'Ο browser μπλόκαρε την κάμερα για αυτόν τον ιστότοπο. Πάτησε το λουκέτο δίπλα στη διεύθυνση → επίτρεψε την κάμερα και ανανέωσε τη σελίδα.',
+        startErrorNoCamera:
+            'Δεν βρέθηκε κάμερα. Έλεγξε ότι είναι συνδεδεμένη και δεν τη χρησιμοποιεί άλλη εφαρμογή.',
+        startErrorTimeout:
+            'Η κάμερα δεν ξεκίνησε εγκαίρως. Κλείσε άλλες εφαρμογές που χρησιμοποιούν την κάμερα και ανανέωσε τη σελίδα.'
     }
 };
+
+const UI_LANGS = ['ru', 'en', 'el'];
+const SPEECH_LANG_BY_UI = { ru: 'ru-RU', en: 'en-US', el: 'el-GR' };
 
 let uiLang = 'ru';
 
 function loadLangFromStorage() {
     const raw = localStorage.getItem(STORAGE_LANG);
-    return raw === 'en' ? 'en' : 'ru';
+    return UI_LANGS.includes(raw) ? raw : 'ru';
 }
 
 function t(key, vars = {}) {
@@ -291,50 +363,32 @@ const GAME_BG_GLOB = import.meta.glob('./src/assets/sounds/OST/*.mp3', {
 });
 const GAME_BG_TRACKS = Object.values(GAME_BG_GLOB);
 
-const VOICE_RU_GLOB = {
-    ...import.meta.glob('./src/assets/sounds/voice/ru/*.MP3', {
-        eager: true,
-        query: '?url',
-        import: 'default'
-    }),
-    ...import.meta.glob('./src/assets/sounds/voice/ru/*.mp3', {
-        eager: true,
-        query: '?url',
-        import: 'default'
-    })
-};
-const VOICE_EN_GLOB = {
-    ...import.meta.glob('./src/assets/sounds/voice/en/*.MP3', {
-        eager: true,
-        query: '?url',
-        import: 'default'
-    }),
-    ...import.meta.glob('./src/assets/sounds/voice/en/*.mp3', {
-        eager: true,
-        query: '?url',
-        import: 'default'
-    })
-};
+const VOICE_GLOB = import.meta.glob('./src/assets/sounds/voice/*/*.{mp3,MP3}', {
+    eager: true,
+    query: '?url',
+    import: 'default'
+});
 
-function buildVoiceUrlMap(globModules) {
-    const map = {};
+/** { lang: { clipId: url } } из путей вида voice/<lang>/<clipId>.mp3 */
+function buildVoiceUrlMaps(globModules) {
+    const maps = {};
     for (const [path, url] of Object.entries(globModules)) {
-        const file = path.split('/').pop() ?? '';
-        const id = file.replace(/\.(mp3|MP3)$/i, '');
-        if (id) map[id] = url;
+        const parts = path.split('/');
+        const lang = parts[parts.length - 2];
+        const id = (parts[parts.length - 1] ?? '').replace(/\.mp3$/i, '');
+        if (!lang || !id) continue;
+        (maps[lang] ??= {})[id] = url;
     }
-    return map;
+    return maps;
 }
 
-const voiceUrlByLang = {
-    ru: buildVoiceUrlMap(VOICE_RU_GLOB),
-    en: buildVoiceUrlMap(VOICE_EN_GLOB)
-};
+const voiceUrlByLang = buildVoiceUrlMaps(VOICE_GLOB);
 
 /** i18n-ключ → имя mp3-файла (без расширения) */
 const VOICE_CLIP_BY_I18N_KEY = {
     praise5: 'praise-5',
     praise10: 'praise-10',
+    praise15: 'praise-15',
     praise20: 'praise-20',
     praiseBig: 'praise-30',
     popupSlowmo: 'powerup-slowmo',
@@ -451,14 +505,9 @@ function warmAudioBuffersYielding(urls) {
     })();
 }
 
+/** Только клипы текущего языка: 3 языка × ~40 декодированных клипов — слишком много памяти на мобильных. */
 function collectVoiceUrlsPrioritized() {
-    const current = Object.values(voiceUrlByLang[uiLang] ?? {});
-    const others = [];
-    for (const [lang, map] of Object.entries(voiceUrlByLang)) {
-        if (lang === uiLang) continue;
-        others.push(...Object.values(map));
-    }
-    return [...current, ...others].filter(Boolean);
+    return Object.values(voiceUrlByLang[uiLang] ?? {}).filter(Boolean);
 }
 
 function preloadGameAudio() {
@@ -629,9 +678,26 @@ let lastSpeechAtMs = 0;
 let voiceAudio = null;
 let voiceBufferSource = null;
 
+/** clipId → последний выбранный вариант, чтобы одна и та же фраза не звучала дважды подряд */
+const lastVoiceVariantByClip = new Map();
+
+/** Варианты реплики: <clipId>, <clipId>-2, <clipId>-3 … — выбираем случайный. */
+function pickVoiceVariant(map, clipId) {
+    if (!map) return null;
+    const variants = Object.keys(map).filter(
+        (id) => id === clipId || (id.startsWith(clipId) && /^-\d+$/.test(id.slice(clipId.length)))
+    );
+    if (!variants.length) return null;
+    const last = lastVoiceVariantByClip.get(clipId);
+    const pool = variants.length > 1 ? variants.filter((id) => id !== last) : variants;
+    const id = pool[Math.floor(Math.random() * pool.length)];
+    lastVoiceVariantByClip.set(clipId, id);
+    return map[id];
+}
+
 function getVoiceUrl(clipId) {
     if (!clipId) return null;
-    return voiceUrlByLang[uiLang]?.[clipId] ?? voiceUrlByLang.ru?.[clipId] ?? null;
+    return pickVoiceVariant(voiceUrlByLang[uiLang], clipId) ?? pickVoiceVariant(voiceUrlByLang.en, clipId);
 }
 
 function speakTts(text, { force = false, rate = 0.95 } = {}) {
@@ -642,7 +708,7 @@ function speakTts(text, { force = false, rate = 0.95 } = {}) {
     try {
         window.speechSynthesis.cancel();
         const u = new SpeechSynthesisUtterance(text);
-        u.lang = uiLang === 'ru' ? 'ru-RU' : 'en-US';
+        u.lang = SPEECH_LANG_BY_UI[uiLang] ?? 'en-US';
         u.volume = Math.max(0, Math.min(1, masterVolume));
         u.rate = rate;
         u.pitch = 1.15;
@@ -863,6 +929,37 @@ let catchStreak = 0;
 /** Обучающая подсказка в начале раунда: видна, пока игрок не «соберёт» ведро */
 let onboardingActive = false;
 let onboardingFade = 1;
+/** Всплывающие надписи: «+1», названия бонусов, похвала за серию */
+const floatingTexts = [];
+/** Последний текст статуса трекинга (объявлен до loadPersistedSettings → applyUiLanguage) */
+let lastTrackingDisplayText = null;
+/** Голосовые реакции раунда: что уже прозвучало и когда последний раз было видно ведро */
+const voiceRound = {
+    bucketReadyAnnounced: false,
+    soloBucketSeen: false,
+    teamAnnounced: false,
+    lastBucketSeenAt: 0,
+    lastTrackingNagAt: 0,
+    lastHowtoAt: 0
+};
+
+function resetVoiceRound(nowMs) {
+    voiceRound.bucketReadyAnnounced = false;
+    voiceRound.soloBucketSeen = false;
+    voiceRound.teamAnnounced = false;
+    voiceRound.lastBucketSeenAt = nowMs;
+    voiceRound.lastTrackingNagAt = nowMs;
+    voiceRound.lastHowtoAt = nowMs;
+}
+
+/** Чем длиннее была серия, тем уместнее подбодрить после промаха */
+const MISS_ENCOURAGE_MIN_STREAK = 8;
+/** Через сколько мс без ведра голосом просим показать руки, и не чаще чем раз в … */
+const TRACKING_NAG_AFTER_MS = 4000;
+const TRACKING_NAG_COOLDOWN_MS = 12000;
+/** Повтор инструкции, пока ведро так и не появилось */
+const HOWTO_REPEAT_MS = 12000;
+const SCORE_VOICE_MILESTONES = { 25: 'score-25', 50: 'score-50', 100: 'score-100' };
 
 function isPowerupActive(type, nowMs) {
     return powerupUntil[type] > nowMs;
@@ -921,6 +1018,9 @@ function maybePraiseStreak(x, y) {
     } else if (catchStreak === 10) {
         key = 'praise10';
         stars = '⭐⭐';
+    } else if (catchStreak === 15) {
+        key = 'praise15';
+        stars = '🔥';
     } else if (catchStreak === 20) {
         key = 'praise20';
         stars = '⭐⭐⭐';
@@ -937,7 +1037,22 @@ function maybePraiseStreak(x, y) {
         stroke: 'rgba(0,0,0,0)'
     });
     playPraiseJingle();
-    speakKey(key);
+    // В режиме «2 игрока» через раз хвалим команду
+    if (playerModeCount === 2 && Math.random() < 0.5) {
+        speakVoice('team-praise', { fallbackText: t(key) });
+    } else {
+        speakKey(key);
+    }
+}
+
+/** Голос на круглых отметках общего счёта и на самой первой капле */
+function maybeAnnounceScore() {
+    if (score === 1) {
+        speakVoice('first-catch');
+        return;
+    }
+    const clip = SCORE_VOICE_MILESTONES[score];
+    if (clip) speakVoice(clip, { force: true });
 }
 
 const GAME_CFG = {
@@ -950,7 +1065,8 @@ const GAME_CFG = {
     spawnIntervalMaxMs: 2600,
     /** Сколько мс капля «нарастает» на потолке перед падением */
     dropGrowDurationMs: 1800,
-    dropSpeedMul: 0.0055,
+    /** Скорость падения капли (доля minSide за кадр 60 fps) */
+    dropSpeedMul: 0.0042,
     dropRadiusMul: 0.026,
     maxDrops: 48,
     /** Сколько капель одновременно может «нарастать» на потолке */
@@ -1061,6 +1177,7 @@ function isMugMode(poseKey, nowMs) {
     if (until == null) return false;
     if (nowMs >= until) {
         mugModeUntilByPoseKey.delete(poseKey);
+        if (isPlaying) speakVoice('mug-over');
         return false;
     }
     return true;
@@ -1204,6 +1321,7 @@ function applyUiLanguage() {
     setText('menu-lang-label', 'langLabel');
     setText('opt-lang-ru-label', 'langRu');
     setText('opt-lang-en-label', 'langEn');
+    setText('opt-lang-el-label', 'langEl');
     setText('menu-options-title', 'soundSection');
     setText('menu-volume-title', 'volume');
     setText('menu-sounds-title', 'gameSounds');
@@ -1240,18 +1358,19 @@ function applyUiLanguage() {
 }
 
 function syncLangRadios() {
-    const ru = document.getElementById('opt-lang-ru');
-    const en = document.getElementById('opt-lang-en');
-    if (ru) ru.checked = uiLang === 'ru';
-    if (en) en.checked = uiLang === 'en';
+    for (const lang of UI_LANGS) {
+        const el = document.getElementById(`opt-lang-${lang}`);
+        if (el) el.checked = uiLang === lang;
+    }
 }
 
 function applyLangFromUi() {
-    const next = document.getElementById('opt-lang-en')?.checked ? 'en' : 'ru';
+    const next = UI_LANGS.find((lang) => document.getElementById(`opt-lang-${lang}`)?.checked) ?? 'ru';
     if (next === uiLang) return;
     uiLang = next;
     localStorage.setItem(STORAGE_LANG, uiLang);
     applyUiLanguage();
+    if (soundEffectsEnabled) warmAudioBuffersYielding(collectVoiceUrlsPrioritized());
 }
 
 function updateMugTimerHud(activeBuckets, nowMs) {
@@ -1727,7 +1846,8 @@ function triggerGameOver() {
     renderGameOverOverlay();
     gameOverOverlay?.classList.remove('is-hidden');
     playPraiseJingle();
-    speakVoice('result-title', {
+    const resultClip = lastGameWasNewBest ? 'result-new-best' : playerModeCount === 2 ? 'result-team' : 'result-title';
+    speakVoice(resultClip, {
         force: true,
         fallbackText: `${t('resultTitle')} ${t('resultCaught', { n: score })}`
     });
@@ -1782,8 +1902,10 @@ function startGame() {
     onboardingActive = true;
     onboardingFade = 1;
     // голосовая инструкция для нечитающих — чуть позже, чтобы не наложиться на старт музыки
+    resetVoiceRound(performance.now());
     setTimeout(() => {
-        if (isPlaying && onboardingActive) {
+        if (isPlaying && onboardingActive && !voiceRound.bucketReadyAnnounced) {
+            voiceRound.lastHowtoAt = performance.now();
             speakVoice('howto-spread-bucket', {
                 force: true,
                 fallbackText: `${t('howToSpread')} ${t('howToBucket')}`
@@ -1967,14 +2089,12 @@ optPlayers2?.addEventListener('change', () => {
     if (optPlayers2.checked) applyPlayerModeFromUi(true);
 });
 
-const optLangRu = document.getElementById('opt-lang-ru');
-const optLangEn = document.getElementById('opt-lang-en');
-optLangRu?.addEventListener('change', () => {
-    if (optLangRu.checked) applyLangFromUi();
-});
-optLangEn?.addEventListener('change', () => {
-    if (optLangEn.checked) applyLangFromUi();
-});
+for (const lang of UI_LANGS) {
+    const opt = document.getElementById(`opt-lang-${lang}`);
+    opt?.addEventListener('change', () => {
+        if (opt.checked) applyLangFromUi();
+    });
+}
 
 syncPlayerCountRadios();
 
@@ -2516,9 +2636,6 @@ function drawMirroredText(ctx, text, x, y, { fill, stroke } = {}) {
     if (fill) ctx.fillText(text, 0, 0);
     ctx.restore();
 }
-
-/** Всплывающие надписи: «+1», названия бонусов, похвала за серию */
-const floatingTexts = [];
 
 function spawnFloatingText(text, x, y, opts = {}) {
     const { minSide } = gameLayout;
@@ -3514,7 +3631,42 @@ function updateHandsFromPose(landmarks, getScreenPoint, poseKey) {
     return bucket;
 }
 
-let lastTrackingDisplayText = null;
+/** Голосовые подсказки по трекингу: «ведро готово», второй игрок, «покажи руки». Зовётся каждый кадр игры. */
+function updateTrackingVoice(bucketCount, nowMs) {
+    if (!isPlaying) return;
+    if (bucketCount > 0) voiceRound.lastBucketSeenAt = nowMs;
+
+    if (!voiceRound.bucketReadyAnnounced) {
+        if (bucketCount > 0) {
+            voiceRound.bucketReadyAnnounced = true;
+            voiceRound.teamAnnounced = playerModeCount === 2 && bucketCount >= 2;
+            speakVoice('bucket-ready', { force: true });
+        } else if (nowMs - voiceRound.lastHowtoAt > HOWTO_REPEAT_MS) {
+            voiceRound.lastHowtoAt = nowMs;
+            speakVoice('howto-spread-bucket', { fallbackText: `${t('howToSpread')} ${t('howToBucket')}` });
+        }
+        return;
+    }
+
+    if (playerModeCount === 2) {
+        if (bucketCount === 1) voiceRound.soloBucketSeen = true;
+        if (bucketCount >= 2 && !voiceRound.teamAnnounced && voiceRound.soloBucketSeen) {
+            voiceRound.teamAnnounced = true;
+            speakVoice('team-ready', { force: true });
+        }
+    }
+
+    if (
+        bucketCount === 0 &&
+        nowMs - voiceRound.lastBucketSeenAt > TRACKING_NAG_AFTER_MS &&
+        nowMs - voiceRound.lastTrackingNagAt > TRACKING_NAG_COOLDOWN_MS
+    ) {
+        voiceRound.lastTrackingNagAt = nowMs;
+        speakVoice(playerModeCount === 2 ? 'need-both' : 'need-hands', {
+            fallbackText: t(playerModeCount === 2 ? 'tracking2NeedBoth' : 'trackingNeedHands')
+        });
+    }
+}
 
 function updateTrackingDisplay(orderedPersons, activeBuckets) {
     if (!trackingDisplay) return;
@@ -3778,6 +3930,7 @@ function gameLoop(nowTime) {
                     color: '#aee6ff',
                     size: gameLayout.minSide * 0.038
                 });
+                maybeAnnounceScore();
                 maybePraiseStreak(drop.x, drop.y - drop.r * 4);
                 playCatchSound();
             }
@@ -3788,6 +3941,7 @@ function gameLoop(nowTime) {
         if (drop.y + drop.r >= floorY) {
             drop.dead = true;
             if (drop.kind !== 'red') {
+                const lostStreak = catchStreak;
                 catchStreak = 0;
                 const prevWater = waterLevel;
                 waterLevel = Math.min(1, waterLevel + GAME_CFG.waterRisePerMiss);
@@ -3796,6 +3950,8 @@ function gameLoop(nowTime) {
                 if (prevWater < dangerStart && waterLevel >= dangerStart) {
                     playWaterAlarm();
                     speakKey('waterWarning', { force: true });
+                } else if (lostStreak >= MISS_ENCOURAGE_MIN_STREAK) {
+                    speakVoice('miss-encourage');
                 }
                 updateHud();
                 playSplashSound();
@@ -3837,6 +3993,8 @@ function gameLoop(nowTime) {
         p.draw(canvasCtx);
         if (p.life <= 0) particles.splice(i, 1);
     }
+
+    updateTrackingVoice(activeBuckets.length, nowTime);
 
     // Обучающая подсказка: плавно гаснет, как только ребёнок собрал ведро
     if (onboardingActive) {

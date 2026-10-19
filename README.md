@@ -44,3 +44,19 @@ npm run dev
 
 - Vite
 - [@mediapipe/tasks-vision](https://www.npmjs.com/package/@mediapipe/tasks-vision) (Pose Landmarker, WASM)
+
+## Озвучка (ElevenLabs)
+
+Голосовые клипы лежат в `src/assets/sounds/voice/<ru|en|el>/<id>.mp3` и генерируются скриптом:
+
+```bash
+node scripts/generate-voice.mjs                      # только отсутствующие клипы
+node scripts/generate-voice.mjs --force              # перегенерировать всё
+node scripts/generate-voice.mjs --lang el --only praise-5 --force
+```
+
+- Тексты реплик и голоса — в [scripts/voice-lines.mjs](scripts/voice-lines.mjs). Варианты одной фразы
+  называются `<id>`, `<id>-2`, `<id>-3` — игра выбирает случайный без повтора подряд.
+- Ключ: `ELEVENLABS_API_KEY` в `.env` (файл в `.gitignore`), модель — `TTS_MODEL`.
+  Голоса можно переопределить через `VOICE_ID_RU` / `VOICE_ID_EN` / `VOICE_ID_EL`.
+  Ключ используется только этим Node-скриптом и в клиентский бандл не попадает.
