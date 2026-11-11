@@ -888,6 +888,53 @@ const mugTimerRows = [0, 1].map((pi) => ({
 let poseLandmarker;
 let visionTasksResolver = null;
 let mediapipePoseDelegate = 'CPU';
+/** 'full' точнее держит запястья и реже путает стороны тела; 'lite' быстрее. Выбор — в createPoseLandmarkerInstance. */
+let poseModelTier = 'lite';
+/** true — full оказалась слишком медленной на этом устройстве, больше её не пробуем */
+let poseModelDowngraded = false;
+const POSE_MODEL_URLS = {
+    lite: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task',
+    full: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task'
+};
+// Сторож производительности: если инференс full не укладывается в бюджет кадра
+// камеры (30 fps ≈ 33 мс), игра начинает дёргаться — тогда откатываемся на lite.
+const POSE_PERF_WARMUP_SAMPLES = 20; // первые кадры медленные (компиляция шейдеров)
+const POSE_PERF_DECIDE_SAMPLES = 60;
+const POSE_PERF_MAX_AVG_MS = 24;
+const posePerf = { n: 0, sumMs: 0, emaMs: 0, camFrames: 0, camFps: 0, fpsWindowStartMs: 0 };
+
+function resetPosePerf() {
+    posePerf.n = 0;
+    posePerf.sumMs = 0;
+}
+
+/** Вызывается после каждого detectForVideo: копит статистику и при необходимости откатывает модель. */
+function notePoseDetect(elapsedMs, nowMs) {
+    posePerf.emaMs = posePerf.emaMs ? posePerf.emaMs * 0.9 + elapsedMs * 0.1 : elapsedMs;
+    posePerf.camFrames += 1;
+    if (nowMs - posePerf.fpsWindowStartMs >= 1000) {
+        posePerf.camFps = (posePerf.camFrames * 1000) / (nowMs - posePerf.fpsWindowStartMs);
+        posePerf.camFrames = 0;
+        posePerf.fpsWindowStartMs = nowMs;
+    }
+
+    if (poseModelTier !== 'full' || poseModelDowngraded) return;
+    posePerf.n += 1;
+    if (posePerf.n <= POSE_PERF_WARMUP_SAMPLES) return;
+    posePerf.sumMs += elapsedMs;
+    const measured = posePerf.n - POSE_PERF_WARMUP_SAMPLES;
+    if (measured < POSE_PERF_DECIDE_SAMPLES) return;
+    const avg = posePerf.sumMs / measured;
+    if (avg > POSE_PERF_MAX_AVG_MS) {
+        console.info(`[RoofLeak] pose model full too slow (${avg.toFixed(1)} ms) → lite`);
+        poseModelDowngraded = true;
+        void recreatePoseLandmarker();
+    } else {
+        // Уложились — больше не меряем до пересоздания модели.
+        poseModelDowngraded = false;
+        posePerf.n = -Infinity;
+    }
+}
 let lastVideoTime = -1;
 let currentPoseResults = null;
 
@@ -1066,7 +1113,7 @@ const GAME_CFG = {
     /** Сколько мс капля «нарастает» на потолке перед падением */
     dropGrowDurationMs: 1800,
     /** Скорость падения капли (доля minSide за кадр 60 fps) */
-    dropSpeedMul: 0.0042,
+    dropSpeedMul: 0.00315,
     dropRadiusMul: 0.026,
     maxDrops: 48,
     /** Сколько капель одновременно может «нарастать» на потолке */
@@ -1103,22 +1150,50 @@ const GAME_CFG = {
     drainWaterAmount: 0.1
 };
 
-const WRIST_SMOOTH_ALPHA = 0.24;
-const WRIST_TELEPORT_PX = 38;
+// --- Фильтрация рук ---------------------------------------------------------
+// One Euro Filter: в покое срез низкий (нет дрожи), при движении срез растёт
+// вместе со скоростью и лаг почти исчезает. Скорость меряем в долях minSide/с,
+// поэтому настройки не зависят от разрешения канваса.
+const HAND_FILTER_MIN_CUTOFF_HZ = 1.4;
+const HAND_FILTER_BETA = 9;
+const HAND_FILTER_D_CUTOFF_HZ = 2.5;
+/** Пауза между сэмплами дольше этой — фильтр начинаем заново (рука «появилась» в новом месте). */
+const HAND_FILTER_RESET_GAP_MS = 250;
+// Камера даёт ~30 кадров/с, экран — 60–144. Между кадрами камеры руки
+// экстраполируются по отфильтрованной скорости, иначе ведро движется рывками 30 Гц.
+const HAND_PREDICT_MAX_MS = 45;
+const HAND_PREDICT_GAIN = 0.7;
+/** Постоянная времени догоняющего сглаживания на экране — прячет поправки экстраполяции. */
+const HAND_DISPLAY_TAU_MS = 22;
+/** Запас по стоимости, прежде чем поменять слоты рук местами (доля minSide). */
+const HAND_SLOT_SWAP_HYSTERESIS_MUL = 0.02;
+/** Ведро не наклоняется сильнее этого угла и никогда не переворачивается. */
+const BUCKET_MAX_TILT = Math.PI / 3;
+const BUCKET_TILT_TAU_MS = 90;
+/** Руки ближе этой доли ширины плеч — угол между ними шумный, наклон не обновляем. */
+const BUCKET_TILT_MIN_SPAN_MUL = 0.25;
+/** Руки почти одна над другой (|dx| меньше этой доли расстояния) — держим прежнюю сторону наклона. */
+const BUCKET_TILT_VERTICAL_HOLD = 0.2;
 const SHOULDER_SMOOTH_ALPHA = 0.12;
-const BUCKET_DISPLAY_SMOOTH_ALPHA = 0.2;
-// Кулаки отзывчивее ведра: у них уже есть EMA запястий, второй слой с малой альфой
-// давал бы каскадный лаг — при взмахе кулаки отставали бы от реальных рук по высоте.
-const WRIST_DISPLAY_SMOOTH_ALPHA = 0.45;
+const SHOULDER_MIN_VISIBILITY = 0.3;
 // Ниже этой видимости лендмарк руки считается потерянным даже внутри кадра.
 const WRIST_GHOST_VISIBILITY = 0.15;
 
+/**
+ * Телефон/планшет определяем по самому устройству, а не по размеру окна:
+ * ноутбук с масштабом 125–150 % или небольшое окно браузера раньше попадали
+ * в «мобильный» профиль и получали медленный CPU-делегат.
+ */
 function isMobileLikeDevice() {
-    if (typeof window === 'undefined') return false;
+    if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
+    const ua = navigator.userAgent || '';
+    if (/Android|iPhone|iPad|iPod|Mobile|Silk|Kindle/i.test(ua)) return true;
+    // iPadOS представляется как Mac
+    if (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) return true;
     const minSide = Math.min(window.innerWidth, window.innerHeight);
     return (
-        window.matchMedia('(pointer: coarse)').matches ||
-        window.matchMedia('(hover: none)').matches ||
+        window.matchMedia('(pointer: coarse)').matches &&
+        window.matchMedia('(hover: none)').matches &&
         minSide <= 820
     );
 }
@@ -1127,23 +1202,18 @@ function buildTrackTuning() {
     const mobile = isMobileLikeDevice();
     return {
         mobile,
-        wristSmoothAlpha: WRIST_SMOOTH_ALPHA,
-        bucketDisplaySmoothAlpha: BUCKET_DISPLAY_SMOOTH_ALPHA,
         shoulderSmoothAlpha: SHOULDER_SMOOTH_ALPHA,
-        wristTeleportPx: WRIST_TELEPORT_PX,
-        wristTeleportMul: 0.045,
         wristMinVisibility: mobile ? 0.3 : GAME_CFG.wristMinVisibility,
         maxCanvasLongEdge: mobile ? 960 : 1280,
         minPoseDetectionConfidence: 0.5,
         minTrackingConfidence: mobile ? 0.3 : 0.5,
         minPosePresenceConfidence: mobile ? 0.3 : 0.5,
         resizeDebounceMs: mobile ? 220 : 110,
-        bucketGraceMs: mobile ? 600 : 250
+        bucketGraceMs: mobile ? 600 : 400
     };
 }
 
 let trackTuning = buildTrackTuning();
-const bucketGraceByPoseKey = new Map();
 
 function refreshTrackTuning() {
     trackTuning = buildTrackTuning();
@@ -1151,23 +1221,13 @@ function refreshTrackTuning() {
 
 window.addEventListener('resize', refreshTrackTuning);
 refreshTrackTuning();
-/** poseKey → { left, right } */
-const wristSmoothByPoseKey = new Map();
-/** poseKey → smoothed shoulder width px */
-const shoulderWidthByPoseKey = new Map();
-/** poseKey → сглаженная позиция ведра на экране */
-const bucketDisplayByPoseKey = new Map();
-/** poseKey → bucket */
-const bucketByPoseKey = new Map();
+/** poseKey → состояние рук игрока: фильтры двух запястий, плечи, экранная позиция (см. updateHandsFromPose) */
+const handTrackByPoseKey = new Map();
 let stablePoseShoulderMid = [];
 
 function resetWristSmoothing() {
-    wristSmoothByPoseKey.clear();
-    bucketByPoseKey.clear();
-    shoulderWidthByPoseKey.clear();
-    bucketDisplayByPoseKey.clear();
+    handTrackByPoseKey.clear();
     mugModeUntilByPoseKey.clear();
-    bucketGraceByPoseKey.clear();
     stablePoseShoulderMid = [];
     torsoFrameData = null;
 }
@@ -1187,100 +1247,46 @@ function applyMugMode(poseKey, nowMs) {
     mugModeUntilByPoseKey.set(poseKey, nowMs + GAME_CFG.mugModeDurationMs);
 }
 
-function smoothShoulderWidth(poseKey, rawW) {
-    const prev = shoulderWidthByPoseKey.get(poseKey);
-    if (prev == null) {
-        shoulderWidthByPoseKey.set(poseKey, rawW);
-        return rawW;
-    }
-    const a = trackTuning.shoulderSmoothAlpha;
-    const next = prev * (1 - a) + rawW * a;
-    shoulderWidthByPoseKey.set(poseKey, next);
-    return next;
+function lowpassAlpha(cutoffHz, dtS) {
+    const tau = 1 / (2 * Math.PI * cutoffHz);
+    return 1 / (1 + tau / dtS);
 }
 
-function smoothWristPoint(prev, raw) {
-    const teleportPx = Math.max(trackTuning.wristTeleportPx, gameLayout.minSide * trackTuning.wristTeleportMul);
-    if (!prev || Math.hypot(raw.x - prev.x, raw.y - prev.y) > teleportPx) {
-        return { x: raw.x, y: raw.y, visibility: raw.visibility };
-    }
-    const a = trackTuning.wristSmoothAlpha;
-    return {
-        x: prev.x * (1 - a) + raw.x * a,
-        y: prev.y * (1 - a) + raw.y * a,
-        visibility: raw.visibility
-    };
+function makePointFilter(p) {
+    return { x: p.x, y: p.y, rx: p.x, ry: p.y, vx: 0, vy: 0 };
 }
 
-function lerpAngle(from, to, a) {
-    let d = to - from;
-    while (d > Math.PI) d -= Math.PI * 2;
-    while (d < -Math.PI) d += Math.PI * 2;
-    return from + d * a;
+/** One Euro Filter для 2D-точки; vx/vy — отфильтрованная скорость, px/с. */
+function stepPointFilter(f, raw, dtS, unitPx) {
+    const ad = lowpassAlpha(HAND_FILTER_D_CUTOFF_HZ, dtS);
+    f.vx += ((raw.x - f.rx) / dtS - f.vx) * ad;
+    f.vy += ((raw.y - f.ry) / dtS - f.vy) * ad;
+    const speed = Math.hypot(f.vx, f.vy) / unitPx;
+    const a = lowpassAlpha(HAND_FILTER_MIN_CUTOFF_HZ + HAND_FILTER_BETA * speed, dtS);
+    f.x += (raw.x - f.x) * a;
+    f.y += (raw.y - f.y) * a;
+    f.rx = raw.x;
+    f.ry = raw.y;
 }
 
-function angularDistance(a, b) {
-    let d = Math.abs(a - b) % (Math.PI * 2);
-    if (d > Math.PI) d = Math.PI * 2 - d;
-    return d;
-}
-
-function smoothBucketDisplay(poseKey, raw) {
-    const a = trackTuning.bucketDisplaySmoothAlpha;
-    // Кулаки: пара сортируется по экранному X и сглаживается как «левый на экране» /
-    // «правый на экране». Метки left/right у MediaPipe тут не важны (спрайт всё равно
-    // выбирается по стороне экрана), а сортировка не флипается, когда руки рядом:
-    // в момент пересечения точки соседние и передача бесшовная. Матчинг «по близости»
-    // здесь не годится — руки, держащие ведро, всегда близко, и назначение дребезжало.
-    const rawA = raw.leftWrist.x >= raw.rightWrist.x ? raw.leftWrist : raw.rightWrist;
-    const rawB = raw.leftWrist.x >= raw.rightWrist.x ? raw.rightWrist : raw.leftWrist;
-
-    let st = bucketDisplayByPoseKey.get(poseKey);
-    if (!st) {
-        st = {
-            cx: raw.cx,
-            topY: raw.topY,
-            angle: raw.angle,
-            wA: { x: rawA.x, y: rawA.y },
-            wB: { x: rawB.x, y: rawB.y }
-        };
-        bucketDisplayByPoseKey.set(poseKey, st);
-        return raw;
+/**
+ * Наклон ведра по двум рукам, радианы в [-BUCKET_MAX_TILT, BUCKET_MAX_TILT]; 0 — ровно.
+ * Считаем по рукам, упорядоченным по экранному X, поэтому результат не зависит от
+ * того, какую руку MediaPipe назвал левой, и ведро физически не может перевернуться.
+ */
+function bucketTiltFromWrists(p, q, prevTilt, shoulderW) {
+    const hi = p.x >= q.x ? p : q;
+    const lo = p.x >= q.x ? q : p;
+    const dx = hi.x - lo.x;
+    const dy = lo.y - hi.y;
+    const span = Math.hypot(dx, dy);
+    if (span < shoulderW * BUCKET_TILT_MIN_SPAN_MUL) return prevTilt;
+    let tilt = Math.atan2(-dy, dx);
+    // Руки почти одна над другой: порядок по X дребезжит, знак наклона прыгал бы ±90°.
+    if (dx < span * BUCKET_TILT_VERTICAL_HOLD && prevTilt !== 0) {
+        tilt = Math.sign(prevTilt) * Math.abs(tilt);
     }
-
-    st.cx = st.cx * (1 - a) + raw.cx * a;
-    st.topY = st.topY * (1 - a) + raw.topY * a;
-
-    // У кулаков своя, более быстрая альфа: EMA запястий уже есть выше по цепочке,
-    // второй медленный слой давал каскадный лаг (кулаки отставали от рук по высоте).
-    const wa = WRIST_DISPLAY_SMOOTH_ALPHA;
-    st.wA.x = st.wA.x * (1 - wa) + rawA.x * wa;
-    st.wA.y = st.wA.y * (1 - wa) + rawA.y * wa;
-    st.wB.x = st.wB.x * (1 - wa) + rawB.x * wa;
-    st.wB.y = st.wB.y * (1 - wa) + rawB.y * wa;
-
-    // MediaPipe временами меняет местами левую/правую стороны тела (особенно на Android):
-    // запястья обмениваются значениями, и угол прыгает на 180°. Вектор между запястьями
-    // не направленный, поэтому raw.angle и raw.angle+π — это одна и та же линия.
-    // Выбираем тот вариант, что ближе к уже установленной ориентации, — ведро не переворачивается.
-    let targetAngle = raw.angle;
-    const flipped = raw.angle + Math.PI;
-    if (angularDistance(flipped, st.angle) < angularDistance(targetAngle, st.angle)) {
-        targetAngle = flipped;
-    }
-    st.angle = lerpAngle(st.angle, targetAngle, a);
-
-    const catchBottomY = st.topY + raw.height * 0.38;
-    return {
-        ...raw,
-        cx: st.cx,
-        topY: st.topY,
-        angle: st.angle,
-        bottomY: st.topY + raw.height,
-        catchBottomY,
-        leftWrist: { x: st.wA.x, y: st.wA.y, visibility: rawA.visibility },
-        rightWrist: { x: st.wB.x, y: st.wB.y, visibility: rawB.visibility }
-    };
+    return Math.max(-BUCKET_MAX_TILT, Math.min(BUCKET_MAX_TILT, tilt));
 }
 
 function initLeakSpots() {
@@ -1670,7 +1676,9 @@ function menuHandTrackingLoop(nowMs) {
         const rawTsMs = Number.isFinite(video.currentTime) ? video.currentTime * 1000 : nowMs;
         poseDetectTsMs = Math.max(poseDetectTsMs + 1, rawTsMs);
         try {
+            const detectStartMs = performance.now();
             const pRes = poseLandmarker.detectForVideo(video, poseDetectTsMs);
+            notePoseDetect(performance.now() - detectStartMs, nowMs);
             if (pRes) {
                 currentPoseResults = pRes;
                 poseFrameIsNew = true;
@@ -2102,10 +2110,13 @@ async function createPoseLandmarkerInstance() {
     const vision = visionTasksResolver;
     if (!vision) return;
     const np = playerModeCount === 1 ? 1 : 2;
+    // На ПК — точная модель (сторож notePoseDetect откатит на lite, если не тянет);
+    // на телефонах сразу lite: full там не укладывается в кадр.
+    poseModelTier = trackTuning.mobile || poseModelDowngraded ? 'lite' : 'full';
+    resetPosePerf();
     const poseOpts = (delegate) => ({
         baseOptions: {
-            modelAssetPath:
-                'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task',
+            modelAssetPath: POSE_MODEL_URLS[poseModelTier],
             delegate
         },
         runningMode: 'VIDEO',
@@ -2133,7 +2144,9 @@ async function createPoseLandmarkerInstance() {
         }
     }
     if (lastErr) throw lastErr;
-    console.info(`[RoofLeak] pose delegate: ${mediapipePoseDelegate}, numPoses=${np}, mobile=${trackTuning.mobile}`);
+    console.info(
+        `[RoofLeak] pose model: ${poseModelTier}, delegate: ${mediapipePoseDelegate}, numPoses=${np}, mobile=${trackTuning.mobile}`
+    );
 }
 
 let gameLayout = { w: 800, h: 600, minSide: 600 };
@@ -3077,7 +3090,7 @@ function updatePowerups(dt, nowMs, activeBuckets, floorY) {
     }
 }
 
-function computeBucket(leftWrist, rightWrist, shoulderW, poseKey, nowMs) {
+function computeBucket(leftWrist, rightWrist, shoulderW, angle, poseKey, nowMs) {
     const cx = (leftWrist.x + rightWrist.x) * 0.5;
     const topY = (leftWrist.y + rightWrist.y) * 0.5;
     const isMug = isMugMode(poseKey, nowMs);
@@ -3086,9 +3099,6 @@ function computeBucket(leftWrist, rightWrist, shoulderW, poseKey, nowMs) {
     const width = shoulderW * GAME_CFG.bucketShoulderMul * vesselMul * bigMul;
     const height = getVesselDisplayHeight(width, isMug);
 
-    const dx = rightWrist.x - leftWrist.x;
-    const dy = rightWrist.y - leftWrist.y;
-    const angle = Math.atan2(dy, dx) + BUCKET_ANGLE_FUDGE;
     const catchHalfW = width * 0.44;
     const catchBottomY = topY + height * 0.38;
 
@@ -3544,53 +3554,35 @@ function playerIndexFromPoseKey(poseKey) {
     return m ? parseInt(m[1], 10) : 0;
 }
 
-function holdBucketDuringGrace(poseKey, nowMs) {
-    if (!trackTuning.bucketGraceMs) {
-        bucketByPoseKey.delete(poseKey);
-        bucketGraceByPoseKey.delete(poseKey);
-        return null;
-    }
-    const last = bucketByPoseKey.get(poseKey);
-    const graceUntil = bucketGraceByPoseKey.get(poseKey) ?? 0;
-    if (last && nowMs < graceUntil) return last;
-    bucketByPoseKey.delete(poseKey);
-    bucketGraceByPoseKey.delete(poseKey);
-    return null;
-}
-
-function updateHandsFromPose(landmarks, getScreenPoint, poseKey) {
-    const nowMs = performance.now();
+/**
+ * Новый кадр камеры: обновить фильтры рук игрока. Сам bucket здесь не строится —
+ * его каждый кадр экрана собирает renderHandTrack(). Если позу разобрать не удалось,
+ * состояние не трогаем: ведро доживает на последних данных до graceUntil.
+ */
+function updateHandsFromPose(landmarks, getScreenPoint, poseKey, nowMs) {
     const lw = landmarks[15];
     const rw = landmarks[16];
     const ls = landmarks[11];
     const rs = landmarks[12];
     // Плечи обязательны: от них считаются ширина ведра и якорь для «потерянной» руки.
-    if (!ls || !rs) {
-        return holdBucketDuringGrace(poseKey, nowMs);
-    }
-    const shoulderVis = Math.min(ls.visibility ?? 1, rs.visibility ?? 1);
-    if (shoulderVis < trackTuning.wristMinVisibility) {
-        return holdBucketDuringGrace(poseKey, nowMs);
-    }
+    if (!ls || !rs) return;
+    if (Math.min(ls.visibility ?? 1, rs.visibility ?? 1) < SHOULDER_MIN_VISIBILITY) return;
 
     const p11 = getScreenPoint(ls);
     const p12 = getScreenPoint(rs);
     const shoulderWRaw = Math.hypot(p12.x - p11.x, p12.y - p11.y);
-    if (shoulderWRaw < GAME_CFG.shoulderMinPx) {
-        return holdBucketDuringGrace(poseKey, nowMs);
-    }
+    if (shoulderWRaw < GAME_CFG.shoulderMinPx) return;
     const shoulderMid = { x: (p11.x + p12.x) * 0.5, y: (p11.y + p12.y) * 0.5 };
 
-    let state = wristSmoothByPoseKey.get(poseKey);
-    if (!state) state = { left: null, right: null, leftOffset: null, rightOffset: null };
+    let st = handTrackByPoseKey.get(poseKey);
+    const ghost = st?.ghost ?? { left: null, right: null };
 
-    // Руки проверяются ПО ОТДЕЛЬНОСТИ: рука у края кадра больше не убивает ведро
-    // целиком. Потерянная рука достраивается по последнему смещению от центра плеч —
-    // «призрак» следует за телом, ведро остаётся в руках.
-    // ВАЖНО: «призрак» включается только когда лендмарк реально ушёл за кадр или
-    // видимость почти нулевая. Просевшая при быстром движении visibility (0.2–0.45)
-    // у руки в кадре — не повод замораживать кулак: реальная координата точнее призрака.
-    const resolveWrist = (wristLm, offsetKey) => {
+    // Руки проверяются ПО ОТДЕЛЬНОСТИ: рука у края кадра не убивает ведро целиком.
+    // Потерянная рука достраивается по последнему смещению от центра плеч — «призрак»
+    // следует за телом. Он включается только когда лендмарк реально ушёл за кадр или
+    // видимость почти нулевая: просевшая при быстром движении visibility у руки в
+    // кадре — не повод замораживать кулак, реальная координата точнее призрака.
+    const resolveWrist = (wristLm, side) => {
         if (wristLm) {
             const vis = wristLm.visibility ?? 1;
             const inFrame =
@@ -3598,37 +3590,108 @@ function updateHandsFromPose(landmarks, getScreenPoint, poseKey) {
             if (vis >= trackTuning.wristMinVisibility || (inFrame && vis >= WRIST_GHOST_VISIBILITY)) {
                 const raw = getScreenPoint(wristLm);
                 raw.visibility = vis;
-                state[offsetKey] = { dx: raw.x - shoulderMid.x, dy: raw.y - shoulderMid.y };
+                ghost[side] = { dx: raw.x - shoulderMid.x, dy: raw.y - shoulderMid.y };
                 return raw;
             }
         }
-        const off = state[offsetKey];
+        const off = ghost[side];
         if (!off) return null;
         return { x: shoulderMid.x + off.dx, y: shoulderMid.y + off.dy, visibility: 0 };
     };
 
-    const leftRaw = resolveWrist(lw, 'leftOffset');
-    const rightRaw = resolveWrist(rw, 'rightOffset');
-    // Обе руки неизвестны (и никогда не были видны) — только тогда ведро уходит в grace.
-    if (!leftRaw || !rightRaw) {
-        return holdBucketDuringGrace(poseKey, nowMs);
+    const leftRaw = resolveWrist(lw, 'left');
+    const rightRaw = resolveWrist(rw, 'right');
+    // Рука ни разу не была видна — ведро строить не из чего.
+    if (!leftRaw || !rightRaw) return;
+
+    const graceUntil = nowMs + trackTuning.bucketGraceMs;
+    if (!st || nowMs - st.tMs > HAND_FILTER_RESET_GAP_MS) {
+        st = {
+            a: makePointFilter(leftRaw),
+            b: makePointFilter(rightRaw),
+            visA: leftRaw.visibility,
+            visB: rightRaw.visibility,
+            shoulderW: st?.shoulderW ?? shoulderWRaw,
+            ghost,
+            tMs: nowMs,
+            graceUntil,
+            disp: null
+        };
+        handTrackByPoseKey.set(poseKey, st);
+        return;
     }
 
-    const shoulderW = smoothShoulderWidth(poseKey, shoulderWRaw);
+    // MediaPipe временами меняет метки left/right местами. Слоты a/b привязаны не к
+    // меткам, а к траектории: каждую точку отдаём тому фильтру, к которому она ближе.
+    // Смена меток тогда вообще не видна — фильтры продолжают вести те же руки.
+    const d = (f, p) => Math.hypot(f.x - p.x, f.y - p.y);
+    const straight = d(st.a, leftRaw) + d(st.b, rightRaw);
+    const crossed = d(st.a, rightRaw) + d(st.b, leftRaw);
+    const swap = crossed + gameLayout.minSide * HAND_SLOT_SWAP_HYSTERESIS_MUL < straight;
+    const rawA = swap ? rightRaw : leftRaw;
+    const rawB = swap ? leftRaw : rightRaw;
 
-    state.left = smoothWristPoint(state.left, leftRaw);
-    state.right = smoothWristPoint(state.right, rightRaw);
-    wristSmoothByPoseKey.set(poseKey, state);
+    const dtS = Math.max(1 / 120, (nowMs - st.tMs) / 1000);
+    stepPointFilter(st.a, rawA, dtS, gameLayout.minSide);
+    stepPointFilter(st.b, rawB, dtS, gameLayout.minSide);
+    st.visA = rawA.visibility;
+    st.visB = rawB.visibility;
+    st.shoulderW += (shoulderWRaw - st.shoulderW) * trackTuning.shoulderSmoothAlpha;
+    st.ghost = ghost;
+    st.tMs = nowMs;
+    st.graceUntil = graceUntil;
+}
 
-    const bucket = smoothBucketDisplay(
+/**
+ * Каждый кадр экрана: положение ведра и кулаков игрока на момент nowMs.
+ * Между кадрами камеры руки экстраполируются по отфильтрованной скорости и
+ * догоняются коротким сглаживанием — движение плавное на любой частоте экрана.
+ * Возвращает bucket или null, если данные устарели (истёк grace).
+ */
+function renderHandTrack(poseKey, nowMs) {
+    const st = handTrackByPoseKey.get(poseKey);
+    if (!st) return null;
+    if (nowMs > st.graceUntil) {
+        handTrackByPoseKey.delete(poseKey);
+        return null;
+    }
+
+    const leadS = (Math.min(HAND_PREDICT_MAX_MS, Math.max(0, nowMs - st.tMs)) * HAND_PREDICT_GAIN) / 1000;
+    const ax = st.a.x + st.a.vx * leadS;
+    const ay = st.a.y + st.a.vy * leadS;
+    const bx = st.b.x + st.b.vx * leadS;
+    const by = st.b.y + st.b.vy * leadS;
+
+    let disp = st.disp;
+    if (!disp) {
+        disp = st.disp = { ax, ay, bx, by, tilt: 0, tMs: nowMs };
+        disp.tilt = bucketTiltFromWrists({ x: ax, y: ay }, { x: bx, y: by }, 0, st.shoulderW);
+    } else {
+        const dtMs = Math.max(0, nowMs - disp.tMs);
+        const k = 1 - Math.exp(-dtMs / HAND_DISPLAY_TAU_MS);
+        disp.ax += (ax - disp.ax) * k;
+        disp.ay += (ay - disp.ay) * k;
+        disp.bx += (bx - disp.bx) * k;
+        disp.by += (by - disp.by) * k;
+        const tiltTarget = bucketTiltFromWrists(
+            { x: disp.ax, y: disp.ay },
+            { x: disp.bx, y: disp.by },
+            disp.tilt,
+            st.shoulderW
+        );
+        disp.tilt += (tiltTarget - disp.tilt) * (1 - Math.exp(-dtMs / BUCKET_TILT_TAU_MS));
+        disp.tMs = nowMs;
+    }
+
+    // π — «ровно» в системе координат спрайта (см. drawBucket), наклон прибавляется к нему.
+    return computeBucket(
+        { x: disp.ax, y: disp.ay, visibility: st.visA },
+        { x: disp.bx, y: disp.by, visibility: st.visB },
+        st.shoulderW,
+        Math.PI + disp.tilt + BUCKET_ANGLE_FUDGE,
         poseKey,
-        computeBucket(state.left, state.right, shoulderW, poseKey, nowMs)
+        nowMs
     );
-    bucketByPoseKey.set(poseKey, bucket);
-    if (trackTuning.bucketGraceMs) {
-        bucketGraceByPoseKey.set(poseKey, nowMs + trackTuning.bucketGraceMs);
-    }
-    return bucket;
 }
 
 /** Голосовые подсказки по трекингу: «ведро готово», второй игрок, «покажи руки». Зовётся каждый кадр игры. */
@@ -3682,6 +3745,9 @@ function updateTrackingDisplay(orderedPersons, activeBuckets) {
         text = t('tracking2NeedSecond');
     } else {
         text = t('tracking2NeedBoth');
+    }
+    if (DEBUG_FRAME_PERF) {
+        text += ` · ${poseModelTier}/${mediapipePoseDelegate} · detect ${posePerf.emaMs.toFixed(0)} ms · cam ${posePerf.camFps.toFixed(0)} fps`;
     }
     // Функция зовётся каждый rAF-кадр — DOM пишем только при смене текста.
     if (text !== lastTrackingDisplayText) {
@@ -3762,12 +3828,14 @@ function gameLoop(nowTime) {
     const startTimeMs = performance.now();
 
     let poseFrameIsNew = false;
-    if (lastVideoTime !== video.currentTime) {
+    if (poseLandmarker && lastVideoTime !== video.currentTime) {
         lastVideoTime = video.currentTime;
         const rawTsMs = Number.isFinite(video.currentTime) ? video.currentTime * 1000 : startTimeMs;
         poseDetectTsMs = Math.max(poseDetectTsMs + 1, rawTsMs);
         try {
+            const detectStartMs = performance.now();
             const pRes = poseLandmarker.detectForVideo(video, poseDetectTsMs);
+            notePoseDetect(performance.now() - detectStartMs, nowTime);
             if (pRes) {
                 currentPoseResults = pRes;
                 poseFrameIsNew = true;
@@ -3814,44 +3882,34 @@ function gameLoop(nowTime) {
 
     if (currentPoseResults?.landmarks) {
         orderedPersons = bindStablePoseKeys(getOrderedPersons(currentPoseResults), getScreenPoint, poseFrameIsNew, nowTime);
-        const activeKeys = new Set(orderedPersons.map((p) => p.key));
 
-        // Сглаживание/перерасчёт ведра — только на новом кадре камеры (~30 fps),
-        // иначе на экранах 120 Гц сглаживание прокручивается лишние разы и дрожит.
-        // На кадрах без обновления переиспользуем последнее положение ведра.
-        for (const { lm, key } of orderedPersons) {
-            const bucket = poseFrameIsNew
-                ? updateHandsFromPose(lm, getScreenPoint, key)
-                : bucketByPoseKey.get(key) ?? null;
-            if (bucket) activeBuckets.push(bucket);
+        // Фильтры рук обновляем только на новом кадре камеры (~30 fps);
+        // на остальных кадрах экрана renderHandTrack экстраполирует.
+        if (poseFrameIsNew) {
+            for (const { lm, key } of orderedPersons) {
+                updateHandsFromPose(lm, getScreenPoint, key, nowTime);
+            }
+            // Один игрок — одно ведро: если трек позы пересоздался под другим ключом,
+            // старое ведро не должно доживать рядом с новым.
+            if (playerModeCount === 1 && orderedPersons.length) {
+                for (const k of [...handTrackByPoseKey.keys()]) {
+                    if (k !== orderedPersons[0].key) handTrackByPoseKey.delete(k);
+                }
+            }
         }
+    }
 
-        for (const k of [...bucketByPoseKey.keys()]) {
-            if (activeKeys.has(k)) continue;
-            const held = holdBucketDuringGrace(k, nowTime);
-            if (held && !activeBuckets.includes(held)) activeBuckets.push(held);
-        }
-
-        for (const k of [...wristSmoothByPoseKey.keys()]) {
-            if (!activeKeys.has(k) && !bucketByPoseKey.has(k)) wristSmoothByPoseKey.delete(k);
-        }
-        for (const k of [...shoulderWidthByPoseKey.keys()]) {
-            if (!activeKeys.has(k) && !bucketByPoseKey.has(k)) shoulderWidthByPoseKey.delete(k);
-        }
-        for (const k of [...bucketDisplayByPoseKey.keys()]) {
-            if (!activeKeys.has(k) && !bucketByPoseKey.has(k)) bucketDisplayByPoseKey.delete(k);
-        }
-    } else if (trackTuning.bucketGraceMs) {
-        for (const k of [...bucketByPoseKey.keys()]) {
-            const held = holdBucketDuringGrace(k, nowTime);
-            if (held) activeBuckets.push(held);
-        }
-    } else {
-        bucketByPoseKey.clear();
+    for (const key of [...handTrackByPoseKey.keys()].sort()) {
+        const bucket = renderHandTrack(key, nowTime);
+        if (bucket) activeBuckets.push(bucket);
     }
 
     lastTrackingPersons = orderedPersons;
     lastTrackingBuckets = activeBuckets;
+    if (DEBUG_FRAME_PERF) {
+        // Отладочный снимок трекинга для ?perf=1 (читается из консоли и автотестов).
+        window.__roofLeakDebug = { buckets: activeBuckets, persons: orderedPersons, posePerf, poseFrameIsNew, nowTime };
+    }
     updateTrackingDisplay(orderedPersons, activeBuckets);
     updateMugTimerHud(activeBuckets, nowTime);
 
